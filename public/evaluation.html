@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>자동 과제 평가 서비스 - 과제 평가 현황 (교수용)</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+  <header>
+    <div class="logo-container" onclick="location.href='main-screen.html'">
+      <div class="logo-icon">📝</div>
+      <span>과제 평가 서비스</span>
+    </div>
+    <div class="user-info">
+      <span id="userRoleTag" class="user-tag">로딩 중...</span>
+      <span id="userName" style="font-weight: 500; font-size: 0.95rem;">로딩 중...</span>
+      <button class="btn btn-secondary btn-sm" onclick="logout()">로그아웃</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- 상단 헤더 -->
+    <div class="page-header">
+      <div>
+        <a id="backToLectureBtn" href="#"
+          style="text-decoration: none; color: var(--primary); font-weight: 600; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.25rem; margin-bottom: 0.5rem;">
+          &larr; 강좌 상세로
+        </a>
+        <h1 id="assignmentTitle" class="page-title">과제 평가 현황</h1>
+        <p id="assignmentDesc" style="color: var(--text-muted); margin-top: 0.5rem; white-space: pre-wrap;">로딩 중...</p>
+      </div>
+    </div>
+
+    <!-- 통계 카드 요약 영역 -->
+    <div
+      style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+      <div class="card"
+        style="margin-bottom: 0; padding: 1.25rem; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500; margin-bottom: 0.25rem;">총 제출
+          학생</span>
+        <span id="statsTotalSubmissions" style="font-size: 1.75rem; font-weight: 700; color: var(--primary);">0</span>
+      </div>
+      <div class="card"
+        style="margin-bottom: 0; padding: 1.25rem; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500; margin-bottom: 0.25rem;">제출자 평균
+          점수</span>
+        <span id="statsAverageScore" style="font-size: 1.75rem; font-weight: 700; color: var(--success);">0</span>
+      </div>
+      <div class="card"
+        style="margin-bottom: 0; padding: 1.25rem; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500; margin-bottom: 0.25rem;">최고
+          점수</span>
+        <span id="statsHighScore" style="font-size: 1.75rem; font-weight: 700; color: var(--warning);">0</span>
+      </div>
+    </div>
+
+    <!-- 제출 현황 테이블 -->
+    <div
+      style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+      <h2 style="font-family: var(--font-heading); font-size: 1.25rem; font-weight: 600; margin: 0;">제출 및 평가 목록</h2>
+      <button id="btnDeleteAllFiles" class="btn btn-danger btn-sm" onclick="deleteAllFiles()">제출 파일 일괄 삭제</button>
+    </div>
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th>학번</th>
+            <th>이름</th>
+            <th>제출 파일</th>
+            <th>제출 일시</th>
+            <th>획득 점수</th>
+            <th>피드백</th>
+          </tr>
+        </thead>
+        <tbody id="submissionTableBody">
+          <!-- 학생 제출 목록이 동적으로 추가됨 -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 피드백 상세 보기 모달 -->
+  <div id="feedbackModal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="feedbackModalTitle">평가 피드백 상세</h3>
+        <button class="close-btn" onclick="closeFeedbackModal()">&times;</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">점수</label>
+        <div id="feedbackModalScore" class="score-badge">0 점</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">상세 피드백</label>
+        <div id="feedbackModalContent" class="feedback-box">피드백 내용</div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+        <button class="btn btn-secondary" onclick="closeFeedbackModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let assignmentId = null;
+
+    function getQueryParam(param) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    }
+
+    async function checkAuth() {
+      assignmentId = getQueryParam('assignmentId');
+      if (!assignmentId) {
+        alert('잘못된 접근입니다.');
+        window.location.href = 'main-screen.html';
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/me');
+        if (!response.ok) {
+          window.location.href = 'index.html';
+          return;
+        }
+        const data = await response.json();
+        currentUser = data.user;
+
+        // 교수 권한 차단
+        if (currentUser.role !== 'professor') {
+          alert('교수 계정만 접근할 수 있는 페이지입니다.');
+          window.location.href = 'main-screen.html';
+          return;
+        }
+
+        document.getElementById('userName').textContent = `${currentUser.name} 님`;
+        const roleTag = document.getElementById('userRoleTag');
+        roleTag.textContent = '교수';
+        roleTag.style.backgroundColor = 'var(--primary-light)';
+        roleTag.style.color = 'var(--primary)';
+
+        await loadAssignmentDetail();
+        await loadSubmissions();
+      } catch (err) {
+        console.error(err);
+        window.location.href = 'index.html';
+      }
+    }
+
+    // 과제 기본 정보 로드
+    async function loadAssignmentDetail() {
+      try {
+        const response = await fetch(`/api/assignments/${assignmentId}`);
+        if (!response.ok) throw new Error('Assignment not found');
+        const assignment = await response.json();
+
+        document.getElementById('assignmentTitle').textContent = `[평가 현황] ${assignment.title}`;
+        document.getElementById('assignmentDesc').textContent = assignment.description;
+        document.getElementById('backToLectureBtn').href = `lecture.html?id=${assignment.course_id}`;
+      } catch (err) {
+        alert('과제 정보를 불러올 수 없습니다.');
+        window.location.href = 'main-screen.html';
+      }
+    }
+
+    // 제출 현황 로드
+    async function loadSubmissions() {
+      const tbody = document.getElementById('submissionTableBody');
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-light);">로딩 중...</td></tr>';
+
+      try {
+        const response = await fetch(`/api/assignments/${assignmentId}/submissions`);
+        if (!response.ok) throw new Error('Failed to load submissions');
+        const submissions = await response.json();
+
+        if (submissions.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-light); padding: 2rem 0;">제출된 과제가 없습니다.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        let totalScore = 0;
+        let evaluatedCount = 0;
+        let maxScore = 0;
+
+        submissions.forEach(sub => {
+          const tr = document.createElement('tr');
+
+          let scoreText = '평가 대기';
+          let feedbackBtn = '-';
+
+          if (sub.score !== null && sub.score !== undefined) {
+            scoreText = `${sub.score} 점`;
+            totalScore += sub.score;
+            evaluatedCount++;
+            if (sub.score > maxScore) maxScore = sub.score;
+
+            feedbackBtn = `
+              <button class="btn btn-secondary btn-sm" onclick="openFeedbackModal('${escapeHtml(sub.student_name)}', ${sub.score}, '${escapeHtmlForJS(sub.feedback)}')">
+                피드백 보기
+              </button>
+            `;
+          }
+
+          let fileColumnHtml = '-';
+          if (sub.file_name) {
+            if (sub.file_path) {
+              fileColumnHtml = `
+                <a href="/api/submissions/${sub.submission_id}/download" style="color: var(--primary); font-weight: 500;" download>
+                  ${escapeHtml(sub.file_name)}
+                </a>
+              `;
+            } else {
+              fileColumnHtml = `
+                <span style="color: var(--text-light); text-decoration: line-through;" title="서버 용량 관리를 위해 삭제된 파일입니다.">
+                  ${escapeHtml(sub.file_name)} (삭제됨)
+                </span>
+              `;
+            }
+          }
+
+          tr.innerHTML = `
+            <td>${escapeHtml(sub.student_id)}</td>
+            <td>${escapeHtml(sub.student_name)}</td>
+            <td>${fileColumnHtml}</td>
+            <td style="font-size: 0.85rem; color: var(--text-muted);">${new Date(sub.submitted_at).toLocaleString()}</td>
+            <td style="font-weight: 600; color: var(--primary);">${scoreText}</td>
+            <td>${feedbackBtn}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        // 요약 통계 업데이트
+        document.getElementById('statsTotalSubmissions').textContent = submissions.length;
+        if (evaluatedCount > 0) {
+          const avg = (totalScore / evaluatedCount).toFixed(1);
+          document.getElementById('statsAverageScore').textContent = `${avg} 점`;
+          document.getElementById('statsHighScore').textContent = `${maxScore} 점`;
+        } else {
+          document.getElementById('statsAverageScore').textContent = '-';
+          document.getElementById('statsHighScore').textContent = '-';
+        }
+
+      } catch (err) {
+        console.error(err);
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--danger);">제출 목록을 로드하지 못했습니다.</td></tr>';
+      }
+    }
+
+    // 피드백 모달 제어
+    function openFeedbackModal(studentName, score, feedback) {
+      document.getElementById('feedbackModalTitle').textContent = `${studentName} 학생의 평가 결과`;
+      document.getElementById('feedbackModalScore').textContent = `${score} 점`;
+      document.getElementById('feedbackModalContent').textContent = feedback;
+      document.getElementById('feedbackModal').classList.add('active');
+    }
+
+    function closeFeedbackModal() {
+      document.getElementById('feedbackModal').classList.remove('active');
+    }
+
+    async function logout() {
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = 'index.html';
+      } catch (err) {
+        alert('로그아웃에 실패했습니다.');
+      }
+    }
+
+    // 제출 파일 일괄 삭제 처리
+    async function deleteAllFiles() {
+      if (!confirm('정말로 이 과제에 제출된 모든 파일들을 서버에서 삭제하시겠습니까?\n한 번 삭제하면 교수가 원본 파일을 다운로드받아 확인할 수 없게 됩니다.\n(채점 결과 및 피드백은 그대로 유지됩니다.)')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/assignments/${assignmentId}/delete-files`, {
+          method: 'POST'
+        });
+
+        if (response.ok) {
+          alert('모든 과제 파일이 서버에서 삭제되었습니다.');
+          loadSubmissions(); // 목록 새로고침
+        } else {
+          const data = await response.json();
+          alert(data.error || '제출 파일 삭제에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신에 실패했습니다.');
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // JS 문자열 전달 시 개행 및 따옴표 이스케이프 헬퍼
+    function escapeHtmlForJS(str) {
+      if (!str) return '';
+      return str
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
+    }
+
+    window.onload = checkAuth;
+  </script>
+</body>
+
+</html>

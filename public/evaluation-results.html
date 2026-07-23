@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>자동 과제 평가 서비스 - 평가 결과 확인 (학생용)</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+  <header>
+    <div class="logo-container" onclick="location.href='main-screen.html'">
+      <div class="logo-icon">📝</div>
+      <span>과제 평가 서비스</span>
+    </div>
+    <div class="user-info">
+      <span id="userRoleTag" class="user-tag">로딩 중...</span>
+      <span id="userName" style="font-weight: 500; font-size: 0.95rem;">로딩 중...</span>
+      <button class="btn btn-secondary btn-sm" onclick="logout()">로그아웃</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- 상단 헤더 -->
+    <div class="page-header">
+      <div>
+        <a id="backToLectureBtn" href="#"
+          style="text-decoration: none; color: var(--primary); font-weight: 600; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.25rem; margin-bottom: 0.5rem;">
+          &larr; 강좌 상세로
+        </a>
+        <h1 id="assignmentTitle" class="page-title">로딩 중...</h1>
+        <p id="assignmentDesc" style="color: var(--text-muted); margin-top: 0.5rem; white-space: pre-wrap;">로딩 중...</p>
+      </div>
+    </div>
+
+    <!-- 평가 결과 카드 레이아웃 -->
+    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; align-items: start;">
+
+      <!-- 왼쪽: 점수 요약 정보 -->
+      <div class="card" style="text-align: center; padding: 2rem;">
+        <h3
+          style="font-family: var(--font-heading); font-size: 1.25rem; font-weight: 600; margin-bottom: 1.5rem; color: var(--text-muted);">
+          최종 평가 점수
+        </h3>
+        <div id="evalScore" class="score-badge score-badge-large">0 점</div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">
+          루브릭 총 합계 기준 채점 점수입니다.
+        </p>
+        <div style="border-top: 1px solid var(--border-color); padding-top: 1.5rem; text-align: left;">
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+            <strong>제출 파일:</strong> <span id="subFileName">-</span>
+          </div>
+          <div style="font-size: 0.85rem; color: var(--text-muted);">
+            <strong>제출 시간:</strong> <span id="subTime">-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 오른쪽: 상세 AI 피드백 -->
+      <div class="card" style="padding: 2rem;">
+        <h3
+          style="font-family: var(--font-heading); font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-main);">
+          🤖 AI 상세 채점 피드백
+        </h3>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+          과제 내용과 평가 루브릭을 바탕으로 한 AI의 평가 결과입니다.
+        </p>
+        <div id="evalFeedback" class="feedback-box">
+          평가 의견을 불러오고 있습니다...
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let submissionId = null;
+
+    function getQueryParam(param) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    }
+
+    async function checkAuth() {
+      submissionId = getQueryParam('submissionId');
+      if (!submissionId) {
+        alert('잘못된 접근입니다.');
+        window.location.href = 'main-screen.html';
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/me');
+        if (!response.ok) {
+          window.location.href = 'index.html';
+          return;
+        }
+        const data = await response.json();
+        currentUser = data.user;
+
+        document.getElementById('userName').textContent = `${currentUser.name} 님`;
+        const roleTag = document.getElementById('userRoleTag');
+        if (currentUser.role === 'professor') {
+          roleTag.textContent = '교수';
+          roleTag.style.backgroundColor = 'var(--primary-light)';
+          roleTag.style.color = 'var(--primary)';
+        } else {
+          roleTag.textContent = '학생';
+          roleTag.style.backgroundColor = 'var(--success-light)';
+          roleTag.style.color = 'var(--success)';
+        }
+
+        await loadEvaluationResult();
+      } catch (err) {
+        console.error(err);
+        window.location.href = 'index.html';
+      }
+    }
+
+    // 평가 결과 조회 및 렌더링
+    async function loadEvaluationResult() {
+      try {
+        const response = await fetch(`/api/submissions/${submissionId}/evaluation`);
+        if (!response.ok) {
+          if (response.status === 403) {
+            alert('자신의 평가 결과만 조회할 수 있습니다.');
+          } else {
+            alert('평가 결과를 불러오는 데 실패했습니다.');
+          }
+          window.location.href = 'main-screen.html';
+          return;
+        }
+
+        const data = await response.json();
+
+        // UI 데이터 매핑
+        document.getElementById('assignmentTitle').textContent = `[결과 확인] ${data.assignment_title}`;
+        document.getElementById('assignmentDesc').textContent = data.assignment_description;
+        document.getElementById('backToLectureBtn').href = `lecture.html?id=${data.course_id}`;
+
+        const maxScore = getMaxRubricScore(data.assignment_rubric);
+        document.getElementById('evalScore').textContent = `${data.score} / ${maxScore} 점`;
+        document.getElementById('evalFeedback').textContent = data.feedback || '피드백을 생성할 수 없습니다.';
+        document.getElementById('subFileName').textContent = data.file_name;
+        document.getElementById('subTime').textContent = new Date(data.submitted_at).toLocaleString();
+      } catch (err) {
+        console.error(err);
+        document.getElementById('evalFeedback').textContent = '평가 결과를 표시하는 중 오류가 발생했습니다.';
+      }
+    }
+
+    // 루브릭 총점 추출 헬퍼
+    function getMaxRubricScore(rubricJson) {
+      if (!rubricJson) return 100;
+      try {
+        const parsed = JSON.parse(rubricJson);
+        if (Array.isArray(parsed)) {
+          return parsed.reduce((sum, item) => sum + (parseInt(item.max_score) || 0), 0);
+        }
+      } catch (e) { }
+      return 100;
+    }
+
+    async function logout() {
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = 'index.html';
+      } catch (err) {
+        alert('로그아웃에 실패했습니다.');
+      }
+    }
+
+    window.onload = checkAuth;
+  </script>
+</body>
+
+</html>

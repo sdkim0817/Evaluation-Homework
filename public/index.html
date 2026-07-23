@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>자동 과제 평가 서비스 - 로그인</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+  <div class="auth-wrapper">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="logo-container" style="justify-content: center; margin-bottom: 1rem;">
+          <div class="logo-icon">📝</div>
+          <span>과제 평가 서비스</span>
+        </div>
+        <h2 id="authTitle" class="auth-title">로그인</h2>
+        <p id="authSubtitle" style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
+          학번과 비밀번호를 입력하세요.
+        </p>
+      </div>
+
+      <!-- 로그인 섹션 -->
+      <div id="loginSection">
+        <form id="loginForm">
+          <div class="form-group">
+            <label class="form-label" for="username">학번</label>
+            <input type="text" id="username" class="form-control" placeholder="학번 입력" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="password">비밀번호</label>
+            <input type="password" id="password" class="form-control" placeholder="비밀번호 입력" required>
+          </div>
+
+          <div id="errorMessage" style="color: var(--danger); font-size: 0.875rem; margin-bottom: 1rem; display: none;">
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="width: 100%;">로그인</button>
+        </form>
+        <div style="margin-top: 1rem; text-align: center; font-size: 0.9rem;">
+          <span style="color: var(--text-muted);">계정이 없으신가요?</span>
+          <a href="#" onclick="toggleAuth(true); return false;"
+            style="color: var(--primary); font-weight: 500; text-decoration: none; margin-left: 0.25rem;">회원가입</a>
+        </div>
+      </div>
+
+      <!-- 회원가입 섹션 -->
+      <div id="signupSection" style="display: none;">
+        <form id="signupForm">
+          <div class="form-group">
+            <label class="form-label" for="signupUsername">학번</label>
+            <input type="text" id="signupUsername" class="form-control" placeholder="학번 입력" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="signupPassword">비밀번호</label>
+            <input type="password" id="signupPassword" class="form-control" placeholder="비밀번호 입력" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="signupName">이름</label>
+            <input type="text" id="signupName" class="form-control" placeholder="이름 입력" required>
+          </div>
+
+          <div id="signupErrorMessage"
+            style="color: var(--danger); font-size: 0.875rem; margin-bottom: 1rem; display: none;"></div>
+
+          <button type="submit" class="btn btn-primary" style="width: 100%;">가입하기</button>
+        </form>
+        <div style="margin-top: 1rem; text-align: center; font-size: 0.9rem;">
+          <span style="color: var(--text-muted);">이미 계정이 있으신가요?</span>
+          <a href="#" onclick="toggleAuth(false); return false;"
+            style="color: var(--primary); font-weight: 500; text-decoration: none; margin-left: 0.25rem;">로그인</a>
+        </div>
+      </div>
+
+      <!--<div style="margin-top: 1.5rem; text-align: center; font-size: 0.8rem; color: var(--text-light);">
+        <p>테스트 계정:</p>
+        <p>교수: professor1 (비밀번호: 1234)</p>
+        <p>학생: student1 또는 student2 (비밀번호: 1234)</p>
+      </div>-->
+    </div>
+  </div>
+
+  <script>
+    // 이미 로그인되어 있는지 체크하여 자동으로 main-screen으로 리다이렉트
+    async function checkLogin() {
+      try {
+        const response = await fetch('/api/me');
+        if (response.ok) {
+          window.location.href = 'main-screen.html';
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    checkLogin();
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const errorDiv = document.getElementById('errorMessage');
+
+      errorDiv.style.display = 'none';
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // 로그인 성공 시 메인 화면으로 이동
+          window.location.href = 'main-screen.html';
+        } else {
+          errorDiv.textContent = data.error || '로그인에 실패했습니다.';
+          errorDiv.style.display = 'block';
+        }
+      } catch (err) {
+        errorDiv.textContent = '서버 통신에 실패했습니다.';
+        errorDiv.style.display = 'block';
+      }
+    });
+
+    function toggleAuth(showSignup) {
+      const loginSec = document.getElementById('loginSection');
+      const signupSec = document.getElementById('signupSection');
+      const title = document.getElementById('authTitle');
+      const subtitle = document.getElementById('authSubtitle');
+
+      if (showSignup) {
+        loginSec.style.display = 'none';
+        signupSec.style.display = 'block';
+        title.textContent = '회원가입';
+        subtitle.textContent = '학번, 비밀번호, 이름을 입력하여 회원으로 가입하세요.';
+      } else {
+        loginSec.style.display = 'block';
+        signupSec.style.display = 'none';
+        title.textContent = '로그인';
+        subtitle.textContent = '학번과 비밀번호를 입력하세요.';
+      }
+
+      // 에러 메시지 초기화 및 폼 리셋
+      document.getElementById('errorMessage').style.display = 'none';
+      document.getElementById('signupErrorMessage').style.display = 'none';
+      document.getElementById('loginForm').reset();
+      document.getElementById('signupForm').reset();
+    }
+
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('signupUsername').value;
+      const password = document.getElementById('signupPassword').value;
+      const name = document.getElementById('signupName').value;
+      const errorDiv = document.getElementById('signupErrorMessage');
+
+      errorDiv.style.display = 'none';
+
+      try {
+        const response = await fetch('/api/signup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password, name })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          alert('회원가입이 완료되었습니다. 가입한 정보로 로그인해 주세요.');
+          toggleAuth(false);
+        } else {
+          errorDiv.textContent = data.error || '회원가입에 실패했습니다.';
+          errorDiv.style.display = 'block';
+        }
+      } catch (err) {
+        errorDiv.textContent = '서버 통신에 실패했습니다.';
+        errorDiv.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>자동 과제 평가 서비스 - 강좌 상세</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+  <header>
+    <div class="logo-container" onclick="location.href='main-screen.html'">
+      <div class="logo-icon">📝</div>
+      <span>과제 평가 서비스</span>
+    </div>
+    <div class="user-info">
+      <span id="userRoleTag" class="user-tag">로딩 중...</span>
+      <span id="userName" style="font-weight: 500; font-size: 0.95rem;">로딩 중...</span>
+      <button class="btn btn-secondary btn-sm" onclick="logout()">로그아웃</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- 상단 강좌 정보 헤더 -->
+    <div class="page-header">
+      <div>
+        <a href="main-screen.html"
+          style="text-decoration: none; color: var(--primary); font-weight: 600; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.25rem; margin-bottom: 0.5rem;">
+          &larr; 강좌 목록으로
+        </a>
+        <h1 id="courseTitle" class="page-title">로딩 중...</h1>
+        <p id="courseDesc" style="color: var(--text-muted); margin-top: 0.5rem; white-space: pre-wrap;">로딩 중...</p>
+      </div>
+      <!-- 교수용 과제 생성 버튼 -->
+      <button id="btnCreateAssignment" class="btn btn-primary" style="display: none;" onclick="openAssignmentModal()">
+        <span>+ 과제 생성</span>
+      </button>
+    </div>
+
+    <!-- 과제 목록 영역 -->
+    <h2
+      style="font-family: var(--font-heading); font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; border-bottom: 2px solid var(--border-color); padding-bottom: 0.5rem;">
+      과제 목록
+    </h2>
+    <div id="assignmentContainer">
+      <!-- 과제 카드들이 동적으로 추가됨 -->
+    </div>
+  </div>
+
+  <!-- 과제 생성 모달 (교수용) -->
+  <div id="assignmentModal" class="modal">
+    <div class="modal-content" style="max-width: 650px;">
+      <div class="modal-header">
+        <h3 class="modal-title">새 과제 생성</h3>
+        <button class="close-btn" onclick="closeAssignmentModal()">&times;</button>
+      </div>
+      <form id="createAssignmentForm">
+        <input type="hidden" id="editAssId">
+        <div class="form-group">
+          <label class="form-label" for="assTitle">과제 제목</label>
+          <input type="text" id="assTitle" class="form-control" placeholder="예: [과제1] 변수와 조건문 실습" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="assDesc">과제 설명</label>
+          <textarea id="assDesc" class="form-control" rows="3" placeholder="과제의 요구사항 및 안내를 입력해 주세요."
+            required></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="assDueDate">마감일</label>
+          <input type="datetime-local" id="assDueDate" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="assAllowedExt">제출 허용 파일 형식 (확장자)</label>
+          <input type="text" id="assAllowedExt" class="form-control" placeholder="예: py, pdf, zip (쉼표로 구분, 비워두면 모두 허용)">
+        </div>
+
+        <!-- 평가 루브릭 설정 영역 -->
+        <div class="form-group">
+          <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>평가 루브릭 설정</span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addRubricRow()">+ 루브릭 항목 추가</button>
+          </label>
+          <div id="rubricBuilderContainer"
+            style="margin-top: 0.5rem; max-height: 200px; overflow-y: auto; padding-right: 0.25rem;">
+            <!-- 동적 루브릭 행이 추가되는 공간 -->
+          </div>
+          <!-- 배점의 총합 제시 -->
+          <div class="rubric-total-box">
+            <span>배점 총점</span>
+            <span><span id="rubricTotalScore">0</span> 점</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeAssignmentModal()">취소</button>
+          <button type="submit" class="btn btn-primary">생성</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 학생 과제 제출 모달 (학생용) -->
+  <div id="submitModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">과제 제출</h3>
+        <button class="close-btn" onclick="closeSubmitModal()">&times;</button>
+      </div>
+      <form id="submitAssignmentForm">
+        <input type="hidden" id="submitAssId">
+        <input type="hidden" id="submitAllowedExt">
+        <div class="form-group">
+          <p id="submitAssTitle" style="font-weight: 600; margin-bottom: 0.5rem;"></p>
+          <p id="submitAssDesc"
+            style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem; white-space: pre-wrap;"></p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="assFile">과제 파일 업로드 (텍스트, 소스코드, PDF 등)</label>
+          <input type="file" id="assFile" class="form-control" required>
+          <p id="submitFormatInfo" style="font-size: 0.85rem; color: var(--danger); font-weight: 500; margin-top: 0.25rem;"></p>
+        </div>
+
+        <!-- 평가 대기 로더 -->
+        <div id="evaluationLoading"
+          style="display: none; text-align: center; margin: 1.5rem 0; padding: 1rem; background-color: var(--primary-light); border-radius: var(--radius-sm);">
+          <div class="loader"></div>
+          <span style="font-weight: 500; color: var(--primary);">LLM 자동 평가가 진행 중입니다... 약 5~10초가 소요됩니다.</span>
+        </div>
+
+        <div id="submitActions" style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeSubmitModal()">취소</button>
+          <button type="submit" class="btn btn-primary">제출 및 평가 시작</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let courseId = null;
+
+    // URL 파라미터 추출
+    function getQueryParam(param) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    }
+
+    // 로그인 확인 및 초기 세팅
+    async function checkAuth() {
+      courseId = getQueryParam('id');
+      if (!courseId) {
+        alert('잘못된 접근입니다.');
+        window.location.href = 'main-screen.html';
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/me');
+        if (!response.ok) {
+          window.location.href = 'index.html';
+          return;
+        }
+        const data = await response.json();
+        currentUser = data.user;
+
+        document.getElementById('userName').textContent = `${currentUser.name} 님`;
+        const roleTag = document.getElementById('userRoleTag');
+        if (currentUser.role === 'professor') {
+          roleTag.textContent = '교수';
+          roleTag.style.backgroundColor = 'var(--primary-light)';
+          roleTag.style.color = 'var(--primary)';
+          document.getElementById('btnCreateAssignment').style.display = 'inline-flex';
+        } else {
+          roleTag.textContent = '학생';
+          roleTag.style.backgroundColor = 'var(--success-light)';
+          roleTag.style.color = 'var(--success)';
+        }
+
+        // 강좌 세부 데이터 및 과제 로드
+        await loadCourseDetail();
+        await loadAssignments();
+      } catch (err) {
+        console.error(err);
+        window.location.href = 'index.html';
+      }
+    }
+
+    // 강좌 기본 정보 가져오기
+    async function loadCourseDetail() {
+      try {
+        const response = await fetch(`/api/courses/${courseId}`);
+        if (!response.ok) throw new Error('Course not found');
+        const course = await response.json();
+
+        document.getElementById('courseTitle').textContent = course.title;
+        document.getElementById('courseDesc').textContent = course.description;
+        document.title = `${course.title} - 강좌 상세`;
+      } catch (err) {
+        alert('강좌 정보를 불러올 수 없습니다.');
+        window.location.href = 'main-screen.html';
+      }
+    }
+
+    // 과제 목록 가져오기 및 제출 상태 연동
+    async function loadAssignments() {
+      const container = document.getElementById('assignmentContainer');
+      container.innerHTML = '<p style="color: var(--text-light);">과제 목록을 로드하는 중...</p>';
+
+      try {
+        const response = await fetch(`/api/courses/${courseId}/assignments`);
+        if (!response.ok) throw new Error('Failed to load assignments');
+        const assignments = await response.json();
+
+        if (assignments.length === 0) {
+          container.innerHTML = '<p style="color: var(--text-light); padding: 2rem 0; text-align: center;">등록된 과제가 없습니다.</p>';
+          return;
+        }
+
+        container.innerHTML = '';
+        for (const ass of assignments) {
+          const card = document.createElement('div');
+          card.className = 'card';
+
+          let rubric = [];
+          try { rubric = JSON.parse(ass.rubric); } catch (e) { }
+          const rubricTotal = rubric.reduce((sum, item) => sum + (parseInt(item.max_score) || 0), 0);
+
+          let rubricText = rubric.map(r => `${r.item}(${r.max_score}점)`).join(', ');
+
+          // 사용자 권한별 버튼 설정
+          let buttonHtml = '';
+          if (currentUser.role === 'professor') {
+            buttonHtml = `
+              <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
+                <a href="evaluation.html?assignmentId=${ass.id}" class="btn btn-primary btn-sm" style="width: 100%; text-align: center;">평가 결과 확인 (모든 학생)</a>
+                <div style="display: flex; gap: 0.25rem; width: 100%;">
+                  <button class="btn btn-secondary btn-sm" style="flex: 1;" onclick="openEditAssignmentModal(${ass.id}, '${escapeHtml(ass.title)}', '${escapeHtml(ass.description)}', '${escapeHtml(ass.due_date)}', '${escapeHtml(ass.rubric)}', '${escapeHtml(ass.allowed_extensions || '')}')">수정</button>
+                  <button class="btn btn-danger btn-sm" style="flex: 1;" onclick="deleteAssignment(${ass.id})">삭제</button>
+                </div>
+              </div>
+            `;
+          } else {
+            // 학생 계정: 본인 제출 기록 조회
+            const subRes = await fetch(`/api/assignments/${ass.id}/my-submission`);
+            const subData = await subRes.json();
+
+            if (subData) {
+              // 이미 제출한 경우
+              buttonHtml = `
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
+                  <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span class="status-pill status-pill-success">제출 완료</span>
+                    <a href="evaluation-results.html?submissionId=${subData.submission_id}" class="btn btn-secondary btn-sm">결과 및 피드백 확인 (${subData.score} / ${rubricTotal}점)</a>
+                  </div>
+                  <button class="btn btn-primary btn-sm" onclick="openSubmitModal(${ass.id}, '${escapeHtml(ass.title)}', '${escapeHtml(ass.description)}', '${escapeHtml(ass.allowed_extensions || '')}')">다시 제출하기</button>
+                </div>
+              `;
+            } else {
+              // 미제출 상태
+              buttonHtml = `<button class="btn btn-primary btn-sm" onclick="openSubmitModal(${ass.id}, '${escapeHtml(ass.title)}', '${escapeHtml(ass.description)}', '${escapeHtml(ass.allowed_extensions || '')}')">과제 제출하기</button>`;
+            }
+          }
+
+          card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+              <div style="flex: 1; min-width: 280px;">
+                <h3 class="card-title">${escapeHtml(ass.title)}</h3>
+                <p class="card-desc" style="white-space: pre-wrap; margin-bottom: 0.75rem;">${escapeHtml(ass.description)}</p>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                  <strong>평가 루브릭:</strong> ${escapeHtml(rubricText)} (총점: ${rubricTotal}점)
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                  <strong>제출 허용 형식:</strong> ${escapeHtml(ass.allowed_extensions ? ass.allowed_extensions : '모든 파일 허용')}
+                </div>
+                <div style="font-size: 0.85rem; color: var(--danger); font-weight: 500;">
+                  <strong>마감일:</strong> ${new Date(ass.due_date).toLocaleString()}
+                </div>
+              </div>
+              <div style="align-self: center;">
+                ${buttonHtml}
+              </div>
+            </div>
+          `;
+          container.appendChild(card);
+        }
+      } catch (err) {
+        console.error(err);
+        container.innerHTML = '<p style="color: var(--danger);">과제 목록을 로드하지 못했습니다.</p>';
+      }
+    }
+
+    // 과제 생성 모달 & 루브릭 동적 폼 제어
+    function openAssignmentModal() {
+      document.querySelector('#assignmentModal .modal-title').textContent = '새 과제 생성';
+      document.getElementById('editAssId').value = '';
+      document.getElementById('createAssignmentForm').reset();
+      
+      document.getElementById('assignmentModal').classList.add('active');
+      document.getElementById('rubricBuilderContainer').innerHTML = '';
+      document.getElementById('rubricTotalScore').textContent = '0';
+      // 기본 1개 행 추가
+      addRubricRow();
+    }
+
+    function closeAssignmentModal() {
+      document.getElementById('assignmentModal').classList.remove('active');
+      document.getElementById('createAssignmentForm').reset();
+      document.getElementById('editAssId').value = '';
+    }
+
+    // 과제 수정 모달 열기
+    function openEditAssignmentModal(id, title, description, due_date, rubricJson, allowedExt) {
+      document.querySelector('#assignmentModal .modal-title').textContent = '과제 수정';
+      document.getElementById('editAssId').value = id;
+      document.getElementById('assTitle').value = title;
+      document.getElementById('assDesc').value = description;
+      document.getElementById('assAllowedExt').value = allowedExt;
+      
+      // 마감일 날짜 변환 (datetime-local 인풋 형식에 맞추기 위해 YYYY-MM-DDTHH:mm 형식으로 변환)
+      if (due_date) {
+        const d = new Date(due_date);
+        const offset = d.getTimezoneOffset() * 60000;
+        const localISOTime = (new Date(d.getTime() - offset)).toISOString().slice(0, 16);
+        document.getElementById('assDueDate').value = localISOTime;
+      } else {
+        document.getElementById('assDueDate').value = '';
+      }
+
+      // 루브릭 복구
+      document.getElementById('rubricBuilderContainer').innerHTML = '';
+      try {
+        const rubric = JSON.parse(rubricJson);
+        if (Array.isArray(rubric) && rubric.length > 0) {
+          rubric.forEach(r => {
+            const container = document.getElementById('rubricBuilderContainer');
+            const row = document.createElement('div');
+            row.className = 'rubric-row';
+            row.innerHTML = `
+              <input type="text" class="form-control rubric-item-input" value="${escapeHtml(r.item)}" required>
+              <input type="number" class="form-control rubric-score-input" value="${r.max_score}" min="1" required oninput="calculateRubricTotal()">
+              <button type="button" class="btn btn-danger btn-sm" onclick="removeRubricRow(this)">삭제</button>
+            `;
+            container.appendChild(row);
+          });
+        } else {
+          addRubricRow();
+        }
+      } catch (e) {
+        addRubricRow();
+      }
+      
+      calculateRubricTotal();
+      document.getElementById('assignmentModal').classList.add('active');
+    }
+
+    // 과제 삭제 처리
+    async function deleteAssignment(id) {
+      if (!confirm('정말로 이 과제를 삭제하시겠습니까?\n과제와 연관된 학생들의 모든 제출 및 평가 결과가 영구 삭제됩니다.')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/assignments/${id}`, {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          alert('과제가 삭제되었습니다.');
+          loadAssignments();
+        } else {
+          const data = await response.json();
+          alert(data.error || '과제 삭제에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신에 실패했습니다.');
+      }
+    }
+
+    function addRubricRow() {
+      const container = document.getElementById('rubricBuilderContainer');
+      const row = document.createElement('div');
+      row.className = 'rubric-row';
+      row.innerHTML = `
+        <input type="text" class="form-control rubric-item-input" placeholder="평가 항목 (예: 내용의 완성도)" required>
+        <input type="number" class="form-control rubric-score-input" placeholder="배점" min="1" required oninput="calculateRubricTotal()">
+        <button type="button" class="btn btn-danger btn-sm" onclick="removeRubricRow(this)">삭제</button>
+      `;
+      container.appendChild(row);
+      calculateRubricTotal();
+    }
+
+    function removeRubricRow(btn) {
+      const row = btn.parentElement;
+      row.remove();
+      calculateRubricTotal();
+    }
+
+    function calculateRubricTotal() {
+      const scoreInputs = document.querySelectorAll('.rubric-score-input');
+      let total = 0;
+      scoreInputs.forEach(input => {
+        const val = parseInt(input.value) || 0;
+        total += val;
+      });
+      document.getElementById('rubricTotalScore').textContent = total;
+    }
+
+    // 과제 생성 또는 수정 요청
+    document.getElementById('createAssignmentForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const editId = document.getElementById('editAssId').value;
+      const title = document.getElementById('assTitle').value;
+      const description = document.getElementById('assDesc').value;
+      const due_date = document.getElementById('assDueDate').value;
+      const allowed_extensions = document.getElementById('assAllowedExt').value;
+
+      // 루브릭 파싱
+      const rows = document.querySelectorAll('.rubric-row');
+      const rubric = [];
+      rows.forEach(row => {
+        const item = row.querySelector('.rubric-item-input').value;
+        const max_score = parseInt(row.querySelector('.rubric-score-input').value) || 0;
+        rubric.push({ item, max_score });
+      });
+
+      if (rubric.length === 0) {
+        alert('최소 1개 이상의 루브릭을 등록해야 합니다.');
+        return;
+      }
+
+      const url = editId ? `/api/assignments/${editId}` : `/api/courses/${courseId}/assignments`;
+      const method = editId ? 'PUT' : 'POST';
+
+      try {
+        const response = await fetch(url, {
+          method: method,
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            title,
+            description,
+            due_date,
+            rubric: JSON.stringify(rubric),
+            allowed_extensions
+          })
+        });
+
+        if (response.ok) {
+          closeAssignmentModal();
+          loadAssignments();
+        } else {
+          const data = await response.json();
+          alert(data.error || '과제 저장에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신에 실패했습니다.');
+      }
+    });
+
+    // 학생 과제 제출 모달 제어
+    function openSubmitModal(id, title, description, allowedExt) {
+      document.getElementById('submitAssId').value = id;
+      document.getElementById('submitAllowedExt').value = allowedExt || '';
+      document.getElementById('submitAssTitle').textContent = title;
+      document.getElementById('submitAssDesc').textContent = description;
+      
+      const formatInfo = allowedExt ? `제출 허용 형식: ${allowedExt}` : '제출 허용 형식: 모든 파일 허용';
+      document.getElementById('submitFormatInfo').textContent = formatInfo;
+
+      document.getElementById('submitModal').classList.add('active');
+    }
+
+    function closeSubmitModal() {
+      if (document.getElementById('evaluationLoading').style.display === 'block') {
+        alert('LLM 평가가 진행 중입니다. 잠시만 기다려주세요.');
+        return; // 평가 도중 강제 닫기 방지
+      }
+      document.getElementById('submitModal').classList.remove('active');
+      document.getElementById('submitAssignmentForm').reset();
+      document.getElementById('submitAllowedExt').value = '';
+    }
+
+    // 학생 과제 제출 처리
+    document.getElementById('submitAssignmentForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('submitAssId').value;
+      const allowedExt = document.getElementById('submitAllowedExt').value;
+      const fileInput = document.getElementById('assFile');
+      if (fileInput.files.length === 0) {
+        alert('파일을 선택해 주세요.');
+        return;
+      }
+
+      const file = fileInput.files[0];
+
+      // 프론트엔드 확장자 검증
+      if (allowedExt && allowedExt.trim() !== '') {
+        const allowedList = allowedExt.split(',').map(ext => ext.trim().toLowerCase()).filter(ext => ext !== '');
+        if (allowedList.length > 0) {
+          const fileName = file.name;
+          const fileExt = fileName.slice(((fileName.lastIndexOf(".") - 1) >>> 0) + 2).toLowerCase();
+          if (!allowedList.includes(fileExt)) {
+            alert(`허용되지 않는 파일 형식입니다. (제출 가능 형식: ${allowedExt})`);
+            return;
+          }
+        }
+      }
+
+      const formData = new FormData();
+      formData.append('assignmentFile', fileInput.files[0]);
+
+      // 로딩 UI 켜기, 버튼 제어
+      document.getElementById('evaluationLoading').style.display = 'block';
+      document.getElementById('submitActions').style.display = 'none';
+
+      try {
+        const response = await fetch(`/api/assignments/${id}/submit`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // 로딩 UI 끄기
+          document.getElementById('evaluationLoading').style.display = 'none';
+          document.getElementById('submitActions').style.display = 'flex';
+
+          document.getElementById('submitModal').classList.remove('active');
+          document.getElementById('submitAssignmentForm').reset();
+
+          // 채점 결과 페이지로 바로 이동
+          window.location.href = `evaluation-results.html?submissionId=${data.submissionId}`;
+        } else {
+          alert(data.error || '과제 제출에 실패했습니다.');
+          document.getElementById('evaluationLoading').style.display = 'none';
+          document.getElementById('submitActions').style.display = 'flex';
+        }
+      } catch (err) {
+        alert('서버 통신 중 오류가 발생했습니다.');
+        document.getElementById('evaluationLoading').style.display = 'none';
+        document.getElementById('submitActions').style.display = 'flex';
+      }
+    });
+
+    async function logout() {
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = 'index.html';
+      } catch (err) {
+        alert('로그아웃에 실패했습니다.');
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    window.onload = checkAuth;
+  </script>
+</body>
+
+</html>
