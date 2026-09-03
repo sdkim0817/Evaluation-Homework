@@ -1,0 +1,28 @@
+# 파일 형식별 평가 함수 분리 (A안) 구현 완료 보고서
+
+백엔드([server.js](file:///d:/Project/eval-assignment/antigravity_ver/server.js))의 제출 처리 라우터를 파일 확장자에 따른 디스패처 구조로 리팩토링하고, 일반 텍스트/HTML 전용 평가 함수(`evaluateTextSubmission`)와 PDF 전용 평가 함수(`evaluatePdfSubmission`)로 채점 모듈을 분리하여 구현을 완료하였습니다.
+
+---
+
+## 주요 변경 및 반영 사항 ([server.js](file:///d:/Project/eval-assignment/antigravity_ver/server.js))
+
+### 1. 제출 라우터 디스패처 적용 ([server.js](file:///d:/Project/eval-assignment/antigravity_ver/server.js#L517-L528))
+- `POST /api/assignments/:assignmentId/submit` 라우터에서 파일 확장자(`path.extname`)를 추출하고, `.pdf` 여부에 따라 알맞은 전용 채점 함수를 분기 호출하도록 구조화했습니다.
+- 제출 파일 저장은 라우터가 수행하고, 각 파일 특성에 맞는 읽기/프롬프트 생성/LLM 호출은 각 개별 평가 함수가 담당합니다.
+
+### 2. 전용 평가 함수 모듈 추가 ([server.js](file:///d:/Project/eval-assignment/antigravity_ver/server.js#L639-L788))
+- **`evaluateTextSubmission(assignment, filePath, fileName)`**:
+  - HTML, PY, TXT 등 텍스트 파일 읽기 및 소스 코드 프롬프트 구성 전담
+  - LLM 호출 후 채점 결과 반환
+- **`evaluatePdfSubmission(assignment, filePath, fileName)`**:
+  - PDF 전용 파일 처리 및 멀티모달 프롬프트 구성 전담
+  - LLM 호출 후 채점 결과 반환
+- **`parseLLMResponse(responseText)`**:
+  - LLM 응답 텍스트에서 JSON 결과를 안전하게 추출하고 `score`, `feedback`, `ai_involvement_score`를 파싱 및 검증하는 공통 파서 헬퍼
+
+---
+
+## 검증 결과 (Verification Results)
+
+- **구문 검사 (Syntax Verification)**
+  - `node -c server.js` 커맨드 실행 결과 0 에러로 정상 통과.

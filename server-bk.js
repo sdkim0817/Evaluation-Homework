@@ -118,15 +118,9 @@ function initializeDatabase() {
       submission_id INTEGER NOT NULL,
       score INTEGER NOT NULL,
       feedback TEXT NOT NULL,
-      ai_involvement_score REAL DEFAULT 0.0,
       evaluated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(submission_id) REFERENCES submissions(id) ON DELETE CASCADE
     )`);
-
-    // 기존 DB 호환을 위한 마이그레이션 (컬럼이 없을 경우 추가)
-    db.run("ALTER TABLE evaluations ADD COLUMN ai_involvement_score REAL DEFAULT 0.0", (err) => {
-      // 이미 컬럼이 존재하는 경우 발생하는 에러는 무시
-    });
 
     // 초기 더미 사용자 계정 입력
     // const stmt = db.prepare("INSERT INTO users (username, password, role, name) VALUES (?, ?, ?, ?)");
@@ -517,20 +511,79 @@ app.post('/api/assignments/:assignmentId/submit', isAuthenticated, upload.single
                 }
                 const submissionId = this.lastID;
 
-                // 4. 파일 확장자에 따른 전용 평가 함수 디스패칭 (A안)
-                const fileExt = path.extname(fileName).toLowerCase().replace('.', '');
-                let evalResult = { score: 0, feedback: '', ai_involvement_score: 0.0 };
+                // 4. LangChain & OpenAI API 연동 평가 수행
+                let evalResult = { score: 0, feedback: '' };
 
-                if (fileExt === 'pdf') {
-                  evalResult = await evaluatePdfSubmission(assignment, filePath, fileName);
+                const apiKey = process.env.OPENAI_API_KEY;
+                if (apiKey && ChatOpenAI) {
+                  try {
+                    const model = new ChatOpenAI({
+                      modelName: "gpt-4o-mini",
+                      apiKey: apiKey,
+                      temperature: 0.2,
+                    });
+
+                    // 프롬프트 작성
+                    const prompt = `
+당신은 "${assignment.course_title}" 과제를 채점하고 피드백을 주는 전문적인 교수자입니다.
+학생이 제출한 과제 내용을 아래의 과제 설명과 평가 루브릭을 바탕으로 엄격하고 공정하게 평가해 주세요.
+
+[과제 제목]
+${assignment.title}
+
+[과제 설명]
+${assignment.description}
+
+[평가 루브릭 (JSON)]
+${assignment.rubric}
+
+[학생이 제출한 과제 내용]
+---
+${submissionContent}
+---
+
+[요구사항]
+1. 루브릭의 각 항목별로 점수 배점 기준에 따라 공정하게 점수를 매겨주세요.
+2. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여해 주세요. (루브릭 총점 한도 내)
+3. 학생에게 도움이 될 수 있는 구체적인 개선 사항과 잘한 점에 대해 간결한 피드백(feedback)을 한국어로 작성해 주세요.
+4. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
+
+\`\`\`json
+{
+  "score": [계산된 총점 (정수)],
+  "feedback": "[루브릭 항목별 평가 내역과 종합 평가 피드백 (한국어)]"
+}
+\`\`\`
+                  `;
+
+                    const response = await model.invoke(prompt);
+                    const responseText = response.content || response.text || '';
+
+                    // JSON 추출 파싱
+                    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                      const parsed = JSON.parse(jsonMatch[0]);
+                      if (typeof parsed.score === 'number' && parsed.feedback) {
+                        evalResult = parsed;
+                      }
+                    } else {
+                      throw new Error("Invalid output format from LLM");
+                    }
+                  } catch (llmErr) {
+                    console.error('LLM Evaluation Error:', llmErr.message);
+                    // LLM 호출 실패 시 Mock 채점 (fallback)
+                    evalResult = generateMockEvaluation(assignment.rubric, fileName);
+                  }
                 } else {
-                  evalResult = await evaluateTextSubmission(assignment, filePath, fileName);
+                  // API Key가 없거나 패키지 로드 안 된 경우 Mock 채점 수행
+                  console.log("No GEMINI_API_KEY found or LangChain not initialized. Using Mock LLM.");
+                  evalResult = generateMockEvaluation(assignment.rubric, fileName);
                 }
 
                 // 5. 평가 테이블에 저장
                 db.run(
-                  "INSERT INTO evaluations (submission_id, score, feedback, ai_involvement_score) VALUES (?, ?, ?, ?)",
-                  [submissionId, evalResult.score, evalResult.feedback, evalResult.ai_involvement_score],
+                  "INSERT INTO evaluations (submission_id, score, feedback) VALUES (?, ?, ?)",
+                  [submissionId, evalResult.score, evalResult.feedback],
                   function (evalErr) {
                     if (evalErr) {
                       return res.status(500).json({ error: 'Evaluation saving failed: ' + evalErr.message });
@@ -539,8 +592,7 @@ app.post('/api/assignments/:assignmentId/submit', isAuthenticated, upload.single
                       message: 'Evaluation completed successfully.',
                       submissionId: submissionId,
                       score: evalResult.score,
-                      feedback: evalResult.feedback,
-                      ai_involvement_score: evalResult.ai_involvement_score
+                      feedback: evalResult.feedback
                     });
                   }
                 );
@@ -572,159 +624,6 @@ app.post('/api/assignments/:assignmentId/submit', isAuthenticated, upload.single
     });
 });
 
-// ------------------------- 전용 평가 함수 모듈 (A안) -------------------------
-
-// LLM 응답 JSON 파싱 공통 헬퍼
-function parseLLMResponse(responseText) {
-  if (!responseText) return null;
-  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (typeof parsed.score === 'number' && parsed.feedback) {
-        const rawAiScore = typeof parsed.ai_involvement_score === 'number' ? parsed.ai_involvement_score : 0.0;
-        const clampedAiScore = Math.max(0.0, Math.min(1.0, rawAiScore));
-        return {
-          score: parsed.score,
-          feedback: parsed.feedback,
-          ai_involvement_score: Math.round(clampedAiScore * 100) / 100
-        };
-      }
-    } catch (e) { }
-  }
-  return null;
-}
-
-// 1. 일반 텍스트/소스코드 과제 평가 함수 (HTML, PY, TXT 등)
-async function evaluateTextSubmission(assignment, filePath, fileName) {
-  let submissionContent = '';
-  try {
-    const stats = fs.statSync(filePath);
-    if (stats.size > 1024 * 1024) {
-      throw new Error('File size exceeds 1MB limit.');
-    }
-    submissionContent = fs.readFileSync(filePath, 'utf-8');
-  } catch (e) {
-    submissionContent = `[파일 내용 읽기 오류: ${e.message}]`;
-  }
-
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey && ChatOpenAI) {
-    try {
-      const model = new ChatOpenAI({
-        modelName: "gpt-4o-mini",
-        apiKey: apiKey,
-        temperature: 0.2,
-      });
-
-      const prompt = `
-당신은 컴퓨터공학과의 "${assignment.course_title}" 교과목 과제를 채점하고 피드백을 주는 전문 평가자입니다.
-학생이 제출한 과제 내용을 아래의 과제 설명과 평가 루브릭을 바탕으로 엄격하고 공정하게 평가해 주세요.
-
-[과제 제목]
-${assignment.title}
-
-[과제 설명]
-${assignment.description}
-
-[평가 루브릭 (JSON)]
-${assignment.rubric}
-
-[학생이 제출한 과제 내용]
----
-${submissionContent}
----
-
-[요구사항]
-1. 루브릭의 각 항목별로 점수 배점 기준에 따라 공정하게 점수를 매겨주세요.
-2. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여해 주세요. (루브릭 총점 한도 내)
-3. 학생에게 전달할 피드백(feedback)은 평가 루브릭에 기반하여 감점 요인에 대해서만 간략하게 한국어로 작성해 주세요.
-4. 제출물(코드 또는 콘텐츠) 중 ChatGPT 등의 AI 도구의 도움을 받아 생성되거나 수정되었을 것으로 추정되는 AI 관여 수준(ai_involvement_score)을 0.0에서 1.0 사이의 실수로 측정해 주세요. (0.0=전혀 없음, 1.0=100% AI 생성/수정 추정)
-5. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
-
-\`\`\`json
-{
-  "score": [계산된 총점 (정수)],
-  "feedback": "[루브릭 항목별 평가 내역과 종합 평가 피드백 (한국어)]",
-  "ai_involvement_score": [0.0에서 1.0 사이의 AI 관여도 추정 실수값]
-}
-\`\`\`
-      `;
-
-      const response = await model.invoke(prompt);
-      const responseText = response.content || response.text || '';
-      const result = parseLLMResponse(responseText);
-      if (result) return result;
-    } catch (llmErr) {
-      console.error('LLM Text Evaluation Error:', llmErr.message);
-    }
-  }
-
-  // API Key 미설정 또는 오류 발생 시 Fallback Mock 채점
-  return generateMockEvaluation(assignment.rubric, fileName);
-}
-
-// 2. PDF 과제 평가 함수 (PDF 전용)
-async function evaluatePdfSubmission(assignment, filePath, fileName) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey && ChatOpenAI) {
-    try {
-      let pdfTextContent = `[PDF 파일 접수: ${fileName}]`;
-
-      const model = new ChatOpenAI({
-        modelName: "gpt-4o-mini",
-        apiKey: apiKey,
-        temperature: 0.2,
-      });
-
-      const prompt = `
-당신은 컴퓨터공학과의 "${assignment.course_title}" 교과목 과제를 채점하고 피드백을 주는 전문 평가자입니다.
-학생이 제출한 PDF 과제 내용을 아래의 과제 설명과 평가 루브릭을 바탕으로 엄격하고 공정하게 평가해 주세요.
-
-[과제 제목]
-${assignment.title}
-
-[과제 설명]
-${assignment.description}
-
-[평가 루브릭 (JSON)]
-${assignment.rubric}
-
-[학생이 제출한 PDF 과제 파일 정보]
----
-파일명: ${fileName}
-내용: ${pdfTextContent}
----
-
-[요구사항]
-1. 루브릭의 각 항목별로 점수 배점 기준에 따라 공정하게 점수를 매겨주세요.
-2. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여해 주세요. (루브릭 총점 한도 내)
-3. 학생에게 전달할 피드백(feedback)은 평가 루브릭에 기반하여 감점 요인에 대해서만 간략하게 한국어로 작성해 주세요.
-4. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
-5. "ai_involvement_score"는 평가하지 않으므로 0으로 고정합니다.
-
-\`\`\`json
-{
-  "score": [계산된 총점 (정수)],
-  "feedback": "[루브릭 항목별 평가 내역과 종합 평가 피드백 (한국어)]",
-  "ai_involvement_score": 0.0
-}
-\`\`\`
-      `;
-
-      const response = await model.invoke(prompt);
-      const responseText = response.content || response.text || '';
-      const result = parseLLMResponse(responseText);
-      if (result) return result;
-    } catch (llmErr) {
-      console.error('LLM PDF Evaluation Error:', llmErr.message);
-    }
-  }
-
-  // API Key 미설정 또는 오류 발생 시 Fallback Mock 채점
-  return generateMockEvaluation(assignment.rubric, fileName);
-}
-
 // Mock 채점 생성 헬퍼 함수
 function generateMockEvaluation(rubricJson, fileName) {
   let maxTotal = 100;
@@ -740,7 +639,6 @@ function generateMockEvaluation(rubricJson, fileName) {
   // 80% ~ 95% 사이의 랜덤 점수 생성
   const percentage = 0.75 + Math.random() * 0.2;
   const score = Math.round(maxTotal * percentage);
-  const ai_involvement_score = Math.round((0.1 + Math.random() * 0.35) * 100) / 100;
 
   let feedback = `[알림: OpenAI API Key 미설정으로 시뮬레이션된 AI 채점 결과입니다]\n\n`;
   feedback += `제출하신 파일 '${fileName}'을 성공적으로 접수했습니다.\n\n`;
@@ -756,7 +654,7 @@ function generateMockEvaluation(rubricJson, fileName) {
   }
   feedback += `\n### [총평]\n제시된 지침과 루브릭 조건을 충실히 반영하려 노력한 흔적이 돋보입니다. 몇 가지 세부 보완(자료 출처 표기 등)이 이루어지면 더욱 높은 완성도의 작업물이 될 것으로 기대합니다. 수고하셨습니다!`;
 
-  return { score, feedback, ai_involvement_score };
+  return { score, feedback };
 }
 
 // 과제 제출 파일 일괄 삭제 API (교수 전용)
@@ -804,7 +702,6 @@ app.get('/api/assignments/:assignmentId/submissions', isAuthenticated, isProfess
       s.submitted_at,
       e.score,
       e.feedback,
-      e.ai_involvement_score,
       e.evaluated_at
     FROM submissions s
     JOIN users u ON s.student_id = u.username
@@ -831,7 +728,6 @@ app.get('/api/submissions/:submissionId/evaluation', isAuthenticated, (req, res)
       s.submitted_at,
       e.score,
       e.feedback,
-      e.ai_involvement_score,
       e.evaluated_at,
       a.title as assignment_title,
       a.description as assignment_description,
@@ -869,8 +765,7 @@ app.get('/api/assignments/:assignmentId/my-submission', isAuthenticated, (req, r
       s.file_name,
       s.submitted_at,
       e.score,
-      e.feedback,
-      e.ai_involvement_score
+      e.feedback
     FROM submissions s
     LEFT JOIN evaluations e ON s.id = e.submission_id
     WHERE s.assignment_id = ? AND s.student_id = ?

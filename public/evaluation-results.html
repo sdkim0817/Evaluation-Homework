@@ -15,8 +15,8 @@
       <span>과제 평가 서비스</span>
     </div>
     <div class="user-info">
-      <span id="userRoleTag" class="user-tag">로딩 중...</span>
-      <span id="userName" style="font-weight: 500; font-size: 0.95rem;">로딩 중...</span>
+      <span id="userRoleTag" class="user-tag"></span>
+      <span id="userName" style="font-weight: 500; font-size: 0.95rem;"></span>
       <button class="btn btn-secondary btn-sm" onclick="logout()">로그아웃</button>
     </div>
   </header>
@@ -29,8 +29,8 @@
           style="text-decoration: none; color: var(--primary); font-weight: 600; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.25rem; margin-bottom: 0.5rem;">
           &larr; 강좌 상세로
         </a>
-        <h1 id="assignmentTitle" class="page-title">로딩 중...</h1>
-        <p id="assignmentDesc" style="color: var(--text-muted); margin-top: 0.5rem; white-space: pre-wrap;">로딩 중...</p>
+        <h1 id="assignmentTitle" class="page-title"></h1>
+        <p id="assignmentDesc" style="color: var(--text-muted); margin-top: 0.5rem; white-space: pre-wrap;"></p>
       </div>
     </div>
 
@@ -137,7 +137,7 @@
 
         // UI 데이터 매핑
         document.getElementById('assignmentTitle').textContent = `[결과 확인] ${data.assignment_title}`;
-        document.getElementById('assignmentDesc').textContent = data.assignment_description;
+        // document.getElementById('assignmentDesc').textContent = data.assignment_description;
         document.getElementById('backToLectureBtn').href = `lecture.html?id=${data.course_id}`;
 
         const maxScore = getMaxRubricScore(data.assignment_rubric);

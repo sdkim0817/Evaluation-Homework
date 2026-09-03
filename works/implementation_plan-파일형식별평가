@@ -1,0 +1,49 @@
+# 백엔드 파일 형식별 평가 함수 분리 (A안) 구현 계획
+
+학생이 제출한 과제 파일의 확장자(`.html`, `.py`, `.txt` vs `.pdf`)에 따라 평가 처리 함수를 분리(Option A)하고, 각 전용 함수가 파일 읽기/전처리 및 LLM 평가를 전담하도록 백엔드 아키텍처를 구조화하는 계획입니다.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> 1. **제출 라우터 디스패처 역할화**: `POST /api/assignments/:assignmentId/submit` 라우터는 파일 확장자를 판별하여 `evaluatePdfSubmission()` 또는 `evaluateTextSubmission()`을 호출하고 결과만 DB에 저장하는 형태로 단순화됩니다.
+> 2. **안전한 모듈 로딩**: PDF 파싱/변환 관련 패키지는 기존 `ChatOpenAI` 모듈처럼 `try-catch`로 감싸 모듈 미설치 시에도 서버 구동 및 Mock 채점이 차질 없이 동작하도록 구성합니다.
+
+---
+
+## Proposed Changes
+
+### 백엔드 서버 ([server.js](file:///d:/Project/eval-assignment/antigravity_ver/server.js))
+
+#### [MODIFY] [server.js](file:///d:/Project/eval-assignment/antigravity_ver/server.js)
+
+1. **평가 함수 분리 및 모듈화**:
+   - **`evaluateTextSubmission(assignment, filePath, fileName)`**:
+     - HTML, PY, TXT 등 텍스트 파일 읽기 (`fs.readFileSync`)
+     - 과제 설명, 루브릭, 텍스트 소스 코드로 프롬프트 작성 후 LLM 호출
+     - JSON 응답 파싱 및 결과 반환 (오류 발생 시 Mock 채점 적용)
+   - **`evaluatePdfSubmission(assignment, filePath, fileName)`**:
+     - PDF 파일 읽기 및 텍스트/이미지 전처리 수행
+     - 멀티모달 프롬프트 구성 후 LLM 호출
+     - JSON 응답 파싱 및 결과 반환 (오류/미설치 시 Mock 채점 적용)
+   - **`parseLLMResponse(responseText)`**:
+     - LLM 반환 텍스트에서 JSON 추출, score / feedback / ai_involvement_score 검증 공통 헬퍼
+
+2. **메인 라우터 (`POST /api/assignments/:assignmentId/submit`) 리팩토링**:
+   - 업로드된 파일 확장자 추출 (`path.extname(fileName)`)
+   - `.pdf` 인 경우 `evaluatePdfSubmission()`, 그 외의 경우 `evaluateTextSubmission()` 호출
+   - 반환받은 `{ score, feedback, ai_involvement_score }`를 DB `evaluations` 테이블에 저장
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- `node -c server.js` 구문 검사
+- Scratch 테스트 스크립트 실행을 통한 확장자별 디스패칭 및 Mock/LLM 반환 객체 규격 검증
+
+### Manual Verification
+1. `node server.js`로 서버 실행
+2. 학생 계정 로그인 후 `.html` 소스 파일 제출 -> `evaluateTextSubmission` 정상 동작 및 채점 완료 확인
+3. 학생 계정 로그인 후 `.pdf` 파일 제출 -> `evaluatePdfSubmission` 분기 처리 및 채점 완료 확인

@@ -3,3 +3,5 @@ node_modules/
 *.db
 uploads/
 .env
+test_*.js
+*.pem

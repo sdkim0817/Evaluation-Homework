@@ -57,13 +57,25 @@
       </div>
       <form id="createAssignmentForm">
         <input type="hidden" id="editAssId">
+
+        <!-- 과제 양식 파일(.md) 업로드 자동 입력 필드 -->
+        <div class="form-group"
+          style="background-color: var(--bg-light, #f8f9fa); padding: 1rem; border-radius: var(--radius-sm, 6px); border: 1px dashed var(--border-color, #cbd5e1); margin-bottom: 1.25rem;">
+          <label class="form-label" for="assMdFile" style="font-weight: 600; color: var(--primary);">📄 과제 양식 파일(.md)
+            업로드하여 자동 입력</label>
+          <input type="file" id="assMdFile" class="form-control" accept=".md,.txt" onchange="handleMdFileUpload(event)">
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem; margin-bottom: 0;">
+            마크다운 과제 파일 선택 시 제목, 설명, 마감일, 제출 파일 형식, 루브릭 항목이 자동으로 추출되어 채워집니다.
+          </p>
+        </div>
+
         <div class="form-group">
           <label class="form-label" for="assTitle">과제 제목</label>
           <input type="text" id="assTitle" class="form-control" placeholder="예: [과제1] 변수와 조건문 실습" required>
         </div>
         <div class="form-group">
           <label class="form-label" for="assDesc">과제 설명</label>
-          <textarea id="assDesc" class="form-control" rows="3" placeholder="과제의 요구사항 및 안내를 입력해 주세요."
+          <textarea id="assDesc" class="form-control" rows="4" placeholder="과제의 요구사항 및 안내를 입력해 주세요."
             required></textarea>
         </div>
         <div class="form-group">
@@ -77,9 +89,8 @@
 
         <!-- 평가 루브릭 설정 영역 -->
         <div class="form-group">
-          <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+          <label class="form-label">
             <span>평가 루브릭 설정</span>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="addRubricRow()">+ 루브릭 항목 추가</button>
           </label>
           <div id="rubricBuilderContainer"
             style="margin-top: 0.5rem; max-height: 200px; overflow-y: auto; padding-right: 0.25rem;">
@@ -118,7 +129,8 @@
         <div class="form-group">
           <label class="form-label" for="assFile">과제 파일 업로드 (텍스트, 소스코드, PDF 등)</label>
           <input type="file" id="assFile" class="form-control" required>
-          <p id="submitFormatInfo" style="font-size: 0.85rem; color: var(--danger); font-weight: 500; margin-top: 0.25rem;"></p>
+          <p id="submitFormatInfo"
+            style="font-size: 0.85rem; color: var(--danger); font-weight: 500; margin-top: 0.25rem;"></p>
         </div>
 
         <!-- 평가 대기 로더 -->
@@ -139,6 +151,7 @@
   <script>
     let currentUser = null;
     let courseId = null;
+    let currentAssignmentsMap = {};
 
     // URL 파라미터 추출
     function getQueryParam(param) {
@@ -218,7 +231,9 @@
         }
 
         container.innerHTML = '';
+        currentAssignmentsMap = {};
         for (const ass of assignments) {
+          currentAssignmentsMap[ass.id] = ass;
           const card = document.createElement('div');
           card.className = 'card';
 
@@ -235,7 +250,7 @@
               <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
                 <a href="evaluation.html?assignmentId=${ass.id}" class="btn btn-primary btn-sm" style="width: 100%; text-align: center;">평가 결과 확인 (모든 학생)</a>
                 <div style="display: flex; gap: 0.25rem; width: 100%;">
-                  <button class="btn btn-secondary btn-sm" style="flex: 1;" onclick="openEditAssignmentModal(${ass.id}, '${escapeHtml(ass.title)}', '${escapeHtml(ass.description)}', '${escapeHtml(ass.due_date)}', '${escapeHtml(ass.rubric)}', '${escapeHtml(ass.allowed_extensions || '')}')">수정</button>
+                  <button class="btn btn-secondary btn-sm" style="flex: 1;" onclick="openEditAssignmentModal(${ass.id})">수정</button>
                   <button class="btn btn-danger btn-sm" style="flex: 1;" onclick="deleteAssignment(${ass.id})">삭제</button>
                 </div>
               </div>
@@ -253,12 +268,12 @@
                     <span class="status-pill status-pill-success">제출 완료</span>
                     <a href="evaluation-results.html?submissionId=${subData.submission_id}" class="btn btn-secondary btn-sm">결과 및 피드백 확인 (${subData.score} / ${rubricTotal}점)</a>
                   </div>
-                  <button class="btn btn-primary btn-sm" onclick="openSubmitModal(${ass.id}, '${escapeHtml(ass.title)}', '${escapeHtml(ass.description)}', '${escapeHtml(ass.allowed_extensions || '')}')">다시 제출하기</button>
+                  <button class="btn btn-primary btn-sm" onclick="openSubmitModal(${ass.id})">다시 제출하기</button>
                 </div>
               `;
             } else {
               // 미제출 상태
-              buttonHtml = `<button class="btn btn-primary btn-sm" onclick="openSubmitModal(${ass.id}, '${escapeHtml(ass.title)}', '${escapeHtml(ass.description)}', '${escapeHtml(ass.allowed_extensions || '')}')">과제 제출하기</button>`;
+              buttonHtml = `<button class="btn btn-primary btn-sm" onclick="openSubmitModal(${ass.id})">과제 제출하기</button>`;
             }
           }
 
@@ -295,12 +310,127 @@
       document.querySelector('#assignmentModal .modal-title').textContent = '새 과제 생성';
       document.getElementById('editAssId').value = '';
       document.getElementById('createAssignmentForm').reset();
-      
+      const mdInput = document.getElementById('assMdFile');
+      if (mdInput) mdInput.value = '';
+
       document.getElementById('assignmentModal').classList.add('active');
       document.getElementById('rubricBuilderContainer').innerHTML = '';
       document.getElementById('rubricTotalScore').textContent = '0';
       // 기본 1개 행 추가
       addRubricRow();
+    }
+
+    // 마크다운 양식 파일(.md) 업로드 핸들러
+    function handleMdFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const text = e.target.result;
+        parseAndFillAssignmentMd(text);
+      };
+      reader.readAsText(file);
+    }
+
+    // 마크다운 과제 파일 파싱 및 폼 자동 입력
+    function parseAndFillAssignmentMd(text) {
+      if (!text) return;
+
+      // 1. 제목 파싱 (## 제목 ...)
+      const titleMatch = text.match(/##\s*제목\s*\n+([\s\S]*?)(?=\n+#{1,4}\s+|$)/i);
+      if (titleMatch && titleMatch[1]) {
+        document.getElementById('assTitle').value = titleMatch[1].trim();
+      }
+
+      // 2. 과제 설명 파싱 (#### 과제 설명 ... 마감일 전까지 모든 내용, 요구사항 포함)
+      let descriptionText = '';
+      const descMatch = text.match(/####\s*과제\s*설명\s*\n+([\s\S]*?)(?=\n+####\s*마감일|$)/i);
+      if (descMatch && descMatch[1]) {
+        descriptionText = descMatch[1].trim();
+      } else {
+        const fallbackDesc = text.match(/##\s*제목\s*\n+.*?\n+([\s\S]*?)(?=\n+####\s*마감일|$)/i);
+        if (fallbackDesc && fallbackDesc[1]) {
+          descriptionText = fallbackDesc[1].trim();
+        }
+      }
+      if (descriptionText) {
+        document.getElementById('assDesc').value = descriptionText;
+      }
+
+      // 3. 마감일 파싱 (#### 마감일: YYYY/MM/DD 또는 YYYY-MM-DD 등)
+      const dateMatch = text.match(/####\s*마감일\s*[:\s]*([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}(?:\s+[0-9]{1,2}:[0-9]{1,2})?)/i);
+      if (dateMatch && dateMatch[1]) {
+        const parts = dateMatch[1].trim().replace(/\//g, '-').split(/\s+/);
+        const dateParts = parts[0].split('-');
+        const yyyy = dateParts[0];
+        const mm = dateParts[1].padStart(2, '0');
+        const dd = dateParts[2].padStart(2, '0');
+        let timeStr = parts[1] ? parts[1] : '23:59';
+        if (timeStr.split(':').length === 2) {
+          const timeParts = timeStr.split(':');
+          timeStr = `${timeParts[0].padStart(2, '0')}:${timeParts[1].padStart(2, '0')}`;
+        }
+        document.getElementById('assDueDate').value = `${yyyy}-${mm}-${dd}T${timeStr}`;
+      }
+
+      // 4. 제출 허용 파일 형식 파싱 (#### 제출 허용 파일 형식 ...)
+      const extMatch = text.match(/####\s*제출\s*허용\s*파일\s*형식\s*\n+([\s\S]*?)(?=\n+####\s*|$)/i);
+      if (extMatch && extMatch[1]) {
+        const extList = extMatch[1].trim().split('\n')[0].trim();
+        document.getElementById('assAllowedExt').value = extList;
+      }
+
+      // 5. 평가 기준 (루브릭) 표 파싱 (#### 평가 기준 ...)
+      const rubricMatch = text.match(/####\s*평가\s*기준\s*\n+([\s\S]*?)(?=\n+#{1,4}\s+|$)/i);
+      const rubricSection = rubricMatch ? rubricMatch[1] : text;
+
+      const lines = rubricSection.split('\n');
+      const parsedRubric = [];
+
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+          const cols = trimmed.split('|').map(c => c.trim()).filter(c => c !== '');
+          if (cols.length >= 2) {
+            const itemStr = cols[0].replace(/\*\*/g, '').trim();
+            const scoreStr = cols[1].replace(/\*\*/g, '').trim();
+
+            if (
+              !itemStr.includes('평가 영역') &&
+              !itemStr.includes('평가항목') &&
+              !itemStr.includes('---') &&
+              !itemStr.includes('합계') &&
+              !scoreStr.includes('---')
+            ) {
+              const scoreNum = parseInt(scoreStr, 10);
+              if (!isNaN(scoreNum) && itemStr !== '') {
+                parsedRubric.push({ item: itemStr, max_score: scoreNum });
+              }
+            }
+          }
+        }
+      });
+
+      const container = document.getElementById('rubricBuilderContainer');
+      container.innerHTML = '';
+
+      if (parsedRubric.length > 0) {
+        parsedRubric.forEach(r => {
+          const row = document.createElement('div');
+          row.className = 'rubric-row';
+          row.innerHTML = `
+            <input type="text" class="form-control rubric-item-input" value="${escapeHtml(r.item)}" required>
+            <input type="number" class="form-control rubric-score-input" value="${r.max_score}" min="1" required oninput="calculateRubricTotal()">
+            <button type="button" class="btn btn-danger btn-sm" onclick="removeRubricRow(this)">삭제</button>
+          `;
+          container.appendChild(row);
+        });
+      } else {
+        addRubricRow();
+      }
+
+      calculateRubricTotal();
     }
 
     function closeAssignmentModal() {
@@ -310,16 +440,19 @@
     }
 
     // 과제 수정 모달 열기
-    function openEditAssignmentModal(id, title, description, due_date, rubricJson, allowedExt) {
+    function openEditAssignmentModal(id) {
+      const ass = currentAssignmentsMap[id];
+      if (!ass) return;
+
       document.querySelector('#assignmentModal .modal-title').textContent = '과제 수정';
-      document.getElementById('editAssId').value = id;
-      document.getElementById('assTitle').value = title;
-      document.getElementById('assDesc').value = description;
-      document.getElementById('assAllowedExt').value = allowedExt;
-      
+      document.getElementById('editAssId').value = ass.id;
+      document.getElementById('assTitle').value = ass.title;
+      document.getElementById('assDesc').value = ass.description;
+      document.getElementById('assAllowedExt').value = ass.allowed_extensions || '';
+
       // 마감일 날짜 변환 (datetime-local 인풋 형식에 맞추기 위해 YYYY-MM-DDTHH:mm 형식으로 변환)
-      if (due_date) {
-        const d = new Date(due_date);
+      if (ass.due_date) {
+        const d = new Date(ass.due_date);
         const offset = d.getTimezoneOffset() * 60000;
         const localISOTime = (new Date(d.getTime() - offset)).toISOString().slice(0, 16);
         document.getElementById('assDueDate').value = localISOTime;
@@ -330,7 +463,7 @@
       // 루브릭 복구
       document.getElementById('rubricBuilderContainer').innerHTML = '';
       try {
-        const rubric = JSON.parse(rubricJson);
+        const rubric = JSON.parse(ass.rubric);
         if (Array.isArray(rubric) && rubric.length > 0) {
           rubric.forEach(r => {
             const container = document.getElementById('rubricBuilderContainer');
@@ -349,7 +482,7 @@
       } catch (e) {
         addRubricRow();
       }
-      
+
       calculateRubricTotal();
       document.getElementById('assignmentModal').classList.add('active');
     }
@@ -460,13 +593,16 @@
     });
 
     // 학생 과제 제출 모달 제어
-    function openSubmitModal(id, title, description, allowedExt) {
-      document.getElementById('submitAssId').value = id;
-      document.getElementById('submitAllowedExt').value = allowedExt || '';
-      document.getElementById('submitAssTitle').textContent = title;
-      document.getElementById('submitAssDesc').textContent = description;
-      
-      const formatInfo = allowedExt ? `제출 허용 형식: ${allowedExt}` : '제출 허용 형식: 모든 파일 허용';
+    function openSubmitModal(id) {
+      const ass = currentAssignmentsMap[id];
+      if (!ass) return;
+
+      document.getElementById('submitAssId').value = ass.id;
+      document.getElementById('submitAllowedExt').value = ass.allowed_extensions || '';
+      document.getElementById('submitAssTitle').textContent = ass.title;
+      // document.getElementById('submitAssDesc').textContent = ass.description;
+
+      const formatInfo = ass.allowed_extensions ? `제출 허용 형식: ${ass.allowed_extensions}` : '제출 허용 형식: 모든 파일 허용';
       document.getElementById('submitFormatInfo').textContent = formatInfo;
 
       document.getElementById('submitModal').classList.add('active');

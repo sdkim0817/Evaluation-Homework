@@ -30,7 +30,7 @@
           &larr; 강좌 상세로
         </a>
         <h1 id="assignmentTitle" class="page-title">과제 평가 현황</h1>
-        <p id="assignmentDesc" style="color: var(--text-muted); margin-top: 0.5rem; white-space: pre-wrap;">로딩 중...</p>
+        <p id="assignmentDesc" style="color: var(--text-muted); margin-top: 0.5rem; white-space: pre-wrap;"></p>
       </div>
     </div>
 
@@ -72,6 +72,7 @@
             <th>제출 파일</th>
             <th>제출 일시</th>
             <th>획득 점수</th>
+            <th>AI 관여도 추정</th>
             <th>피드백</th>
           </tr>
         </thead>
@@ -89,9 +90,16 @@
         <h3 class="modal-title" id="feedbackModalTitle">평가 피드백 상세</h3>
         <button class="close-btn" onclick="closeFeedbackModal()">&times;</button>
       </div>
-      <div class="form-group">
-        <label class="form-label">점수</label>
-        <div id="feedbackModalScore" class="score-badge">0 점</div>
+      <div style="display: flex; gap: 1rem;">
+        <div class="form-group" style="flex: 1;">
+          <label class="form-label">점수</label>
+          <div id="feedbackModalScore" class="score-badge">0 점</div>
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label class="form-label">AI 관여도 추정</label>
+          <div id="feedbackModalAiScore" class="score-badge" style="background-color: #e3f2fd; color: #0288d1;">0%
+            (0.00)</div>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">상세 피드백</label>
@@ -158,7 +166,7 @@
         const assignment = await response.json();
 
         document.getElementById('assignmentTitle').textContent = `[평가 현황] ${assignment.title}`;
-        document.getElementById('assignmentDesc').textContent = assignment.description;
+        // document.getElementById('assignmentDesc').textContent = assignment.description;
         document.getElementById('backToLectureBtn').href = `lecture.html?id=${assignment.course_id}`;
       } catch (err) {
         alert('과제 정보를 불러올 수 없습니다.');
@@ -169,7 +177,7 @@
     // 제출 현황 로드
     async function loadSubmissions() {
       const tbody = document.getElementById('submissionTableBody');
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-light);">로딩 중...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-light);">로딩 중...</td></tr>';
 
       try {
         const response = await fetch(`/api/assignments/${assignmentId}/submissions`);
@@ -177,7 +185,7 @@
         const submissions = await response.json();
 
         if (submissions.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-light); padding: 2rem 0;">제출된 과제가 없습니다.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-light); padding: 2rem 0;">제출된 과제가 없습니다.</td></tr>';
           return;
         }
 
@@ -190,6 +198,7 @@
           const tr = document.createElement('tr');
 
           let scoreText = '평가 대기';
+          let aiScoreText = '-';
           let feedbackBtn = '-';
 
           if (sub.score !== null && sub.score !== undefined) {
@@ -198,8 +207,13 @@
             evaluatedCount++;
             if (sub.score > maxScore) maxScore = sub.score;
 
+            if (sub.ai_involvement_score !== null && sub.ai_involvement_score !== undefined) {
+              const pct = Math.round(sub.ai_involvement_score * 100);
+              aiScoreText = `${pct}% (${sub.ai_involvement_score})`;
+            }
+
             feedbackBtn = `
-              <button class="btn btn-secondary btn-sm" onclick="openFeedbackModal('${escapeHtml(sub.student_name)}', ${sub.score}, '${escapeHtmlForJS(sub.feedback)}')">
+              <button class="btn btn-secondary btn-sm" onclick="openFeedbackModal('${escapeHtml(sub.student_name)}', ${sub.score}, ${sub.ai_involvement_score ?? 0}, '${escapeHtmlForJS(sub.feedback)}')">
                 피드백 보기
               </button>
             `;
@@ -228,6 +242,7 @@
             <td>${fileColumnHtml}</td>
             <td style="font-size: 0.85rem; color: var(--text-muted);">${new Date(sub.submitted_at).toLocaleString()}</td>
             <td style="font-weight: 600; color: var(--primary);">${scoreText}</td>
+            <td style="font-weight: 500; color: var(--info, #0288d1);">${aiScoreText}</td>
             <td>${feedbackBtn}</td>
           `;
           tbody.appendChild(tr);
@@ -246,14 +261,16 @@
 
       } catch (err) {
         console.error(err);
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--danger);">제출 목록을 로드하지 못했습니다.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--danger);">제출 목록을 로드하지 못했습니다.</td></tr>';
       }
     }
 
     // 피드백 모달 제어
-    function openFeedbackModal(studentName, score, feedback) {
+    function openFeedbackModal(studentName, score, aiScore, feedback) {
       document.getElementById('feedbackModalTitle').textContent = `${studentName} 학생의 평가 결과`;
       document.getElementById('feedbackModalScore').textContent = `${score} 점`;
+      const pct = (aiScore !== null && aiScore !== undefined) ? Math.round(aiScore * 100) : 0;
+      document.getElementById('feedbackModalAiScore').textContent = `${pct}% (${aiScore ?? 0})`;
       document.getElementById('feedbackModalContent').textContent = feedback;
       document.getElementById('feedbackModal').classList.add('active');
     }
