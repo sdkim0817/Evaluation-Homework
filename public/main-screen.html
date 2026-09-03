@@ -21,26 +21,134 @@
     </div>
   </header>
 
-  <div class="container">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">개설 강좌 목록</h1>
-        <p style="color: var(--text-muted); margin-top: 0.25rem;">수강하거나 관리하는 강좌 목록을 확인하고 이동합니다.</p>
+  <div class="container" style="max-width: 1280px;">
+    <!-- ======================= 1. 교수용 대시보드 뷰 ======================= -->
+    <div id="professorView" style="display: none;">
+      <div class="page-header" style="margin-bottom: 1.25rem;">
+        <div>
+          <h1 class="page-title">개설 강좌 관리 대시보드</h1>
+          <p style="color: var(--text-muted); margin-top: 0.25rem;">
+            개설한 강좌를 선택하여 제시된 과제 목록과 가입 학생들의 제출 현황을 한눈에 확인합니다.
+          </p>
+        </div>
+        <button class="btn btn-primary" onclick="openCreateModal()">
+          <span>+ 새 강좌 개설</span>
+        </button>
       </div>
-      <!-- 교수용 강좌 생성 버튼 -->
-      <button id="btnCreateCourse" class="btn btn-primary" style="display: none;" onclick="openCreateModal()">
-        <span>+ 강좌 개설</span>
-      </button>
+
+      <!-- 강좌 선택 탭 바 -->
+      <div id="courseTabsBar" class="course-tabs-bar">
+        <!-- 동적으로 강좌 탭 버튼들이 추가됨 -->
+      </div>
+
+      <!-- 선택된 강좌 상세 대시보드 영역 -->
+      <div id="courseDashboardArea">
+        <!-- 강좌 정보 배너 -->
+        <div class="course-info-banner">
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+              <h2 id="currentCourseTitle" style="font-size: 1.4rem; font-weight: 700; color: var(--text-main);">로딩 중...</h2>
+            </div>
+            <p id="currentCourseDesc" style="color: var(--text-muted); font-size: 0.92rem; white-space: pre-wrap; margin: 0;"></p>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="openEditCurrentCourseModal()">강좌 수정</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteCurrentCourse()">강좌 삭제</button>
+            <a id="linkToLecturePage" href="#" class="btn btn-primary btn-sm">강좌 상세 페이지 &rarr;</a>
+          </div>
+        </div>
+
+        <!-- 통계 요약 바 -->
+        <div class="stats-bar">
+          <div class="stat-item">
+            <span class="stat-label">등록 학생 수</span>
+            <span id="statTotalStudents" class="stat-value">0명</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">개설 과제 수</span>
+            <span id="statTotalAssignments" class="stat-value">0개</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">총 과제 제출 수</span>
+            <span id="statTotalSubmissions" class="stat-value">0건</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">전체 과제 제출률</span>
+            <span id="statSubmissionRate" class="stat-value" style="color: var(--primary);">0%</span>
+          </div>
+        </div>
+
+        <!-- 2단 대시보드 그리드: [과제 목록] + [가입 학생 및 과제 제출 현황] -->
+        <div class="dashboard-layout">
+          <!-- 좌측 패널: 강좌 과제 목록 -->
+          <div class="dashboard-panel">
+            <div class="panel-header">
+              <div class="panel-title">
+                <span>📌</span>
+                <span>제시된 과제 목록</span>
+                <span id="assCountBadge" class="tag-badge tag-badge-primary">0</span>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="openAssignmentModal()">
+                <span>+ 새 과제 추가</span>
+              </button>
+            </div>
+            <div id="assignmentListContainer">
+              <!-- 과제 카드들이 동적으로 로드됨 -->
+            </div>
+          </div>
+
+          <!-- 우측 패널: 가입 학생 명단 및 과제 제출 현황 -->
+          <div class="dashboard-panel">
+            <div class="panel-header">
+              <div class="panel-title">
+                <span>👥</span>
+                <span>가입 학생 및 과제 제출 현황</span>
+                <span id="studentCountBadge" class="tag-badge tag-badge-gray">0</span>
+              </div>
+              <div style="width: 180px;">
+                <input type="text" id="studentSearchInput" class="form-control" placeholder="학번 / 이름 검색..."
+                  style="font-size: 0.85rem; padding: 0.35rem 0.6rem;" oninput="filterStudentTable()">
+              </div>
+            </div>
+            <div style="overflow-x: auto;">
+              <table class="student-table" id="studentStatusTable">
+                <thead>
+                  <tr id="studentTableHeaderRow">
+                    <th style="width: 90px;">학번</th>
+                    <th style="width: 90px;">이름</th>
+                    <th>과제별 제출 현황 (점수)</th>
+                    <th style="width: 80px; text-align: center;">제출률</th>
+                  </tr>
+                </thead>
+                <tbody id="studentTableBody">
+                  <!-- 학생 목록 행이 동적으로 로드됨 -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- 강좌 목록 카드 영역 -->
-    <div id="courseContainer"
-      style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem;">
-      <!-- 강좌 카드들이 동적으로 추가됨 -->
+    <!-- ======================= 2. 학생용 강좌 목록 뷰 ======================= -->
+    <div id="studentView" style="display: none;">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">수강 강좌 목록</h1>
+          <p style="color: var(--text-muted); margin-top: 0.25rem;">수강 중인 강좌를 선택하여 과제 제출 및 평가 결과를 확인하세요.</p>
+        </div>
+      </div>
+
+      <div id="studentCourseContainer"
+        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem;">
+        <!-- 학생용 강좌 카드 -->
+      </div>
     </div>
   </div>
 
-  <!-- 강좌 생성 모달 (교수용) -->
+  <!-- ======================= 모달 컴포넌트 모음 ======================= -->
+
+  <!-- 1. 강좌 생성 모달 (교수용) -->
   <div id="createModal" class="modal">
     <div class="modal-content">
       <div class="modal-header">
@@ -54,8 +162,7 @@
         </div>
         <div class="form-group">
           <label class="form-label" for="newCourseDesc">강좌 설명</label>
-          <textarea id="newCourseDesc" class="form-control" rows="4" placeholder="강좌의 개요 및 목표를 작성해 주세요."
-            required></textarea>
+          <textarea id="newCourseDesc" class="form-control" rows="4" placeholder="강좌의 개요 및 목표를 작성해 주세요." required></textarea>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
           <button type="button" class="btn btn-secondary" onclick="closeCreateModal()">취소</button>
@@ -65,7 +172,7 @@
     </div>
   </div>
 
-  <!-- 강좌 수정 모달 (교수용) -->
+  <!-- 2. 강좌 수정 모달 (교수용) -->
   <div id="editModal" class="modal">
     <div class="modal-content">
       <div class="modal-header">
@@ -90,10 +197,91 @@
     </div>
   </div>
 
+  <!-- 3. 과제 생성/수정 모달 (교수용) -->
+  <div id="assignmentModal" class="modal">
+    <div class="modal-content" style="max-width: 650px;">
+      <div class="modal-header">
+        <h3 id="assignmentModalTitle" class="modal-title">새 과제 생성</h3>
+        <button class="close-btn" onclick="closeAssignmentModal()">&times;</button>
+      </div>
+      <form id="createAssignmentForm">
+        <input type="hidden" id="editAssId">
+
+        <!-- 과제 양식 파일(.md) 업로드 자동 입력 필드 -->
+        <div class="form-group"
+          style="background-color: var(--bg-light, #f8f9fa); padding: 1rem; border-radius: var(--radius-sm, 6px); border: 1px dashed var(--border-color, #cbd5e1); margin-bottom: 1.25rem;">
+          <label class="form-label" for="assMdFile" style="font-weight: 600; color: var(--primary);">📄 과제 양식 파일(.md) 업로드하여 자동 입력</label>
+          <input type="file" id="assMdFile" class="form-control" accept=".md,.txt" onchange="handleMdFileUpload(event)">
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem; margin-bottom: 0;">
+            마크다운 과제 파일 선택 시 제목, 설명, 마감일, 제출 파일 형식, 루브릭 항목이 자동으로 채워집니다.
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="assTitle">과제 제목</label>
+          <input type="text" id="assTitle" class="form-control" placeholder="예: [과제1] 변수와 조건문 실습" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="assDesc">과제 설명</label>
+          <textarea id="assDesc" class="form-control" rows="4" placeholder="과제의 요구사항 및 안내를 입력해 주세요." required></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="assDueDate">마감일</label>
+          <input type="datetime-local" id="assDueDate" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="assAllowedExt">제출 허용 파일 형식 (확장자)</label>
+          <input type="text" id="assAllowedExt" class="form-control" placeholder="예: py, pdf, zip (쉼표 구분, 비워두면 모두 허용)">
+        </div>
+
+        <!-- 평가 루브릭 설정 영역 -->
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <label class="form-label" style="margin-bottom: 0;">평가 루브릭 설정</label>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addRubricRow()">+ 항목 추가</button>
+          </div>
+          <div id="rubricBuilderContainer" style="max-height: 180px; overflow-y: auto; padding-right: 0.25rem;">
+            <!-- 루브릭 행 동적 추가 -->
+          </div>
+          <div class="rubric-total-box">
+            <span>배점 총점</span>
+            <span><span id="rubricTotalScore">0</span> 점</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeAssignmentModal()">취소</button>
+          <button type="submit" class="btn btn-primary" id="btnSaveAssignment">생성</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 4. 학생 과제 제출 및 평가 결과 상세 팝업 모달 -->
+  <div id="evalDetailModal" class="modal">
+    <div class="modal-content" style="max-width: 650px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="evalDetailModalTitle">과제 제출 및 평가 결과</h3>
+        <button class="close-btn" onclick="closeEvalDetailModal()">&times;</button>
+      </div>
+      <div id="evalDetailContent" style="padding-top: 0.5rem;">
+        <!-- 동적으로 제출 상세 내용 채워짐 -->
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeEvalDetailModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= 대시보드 스크립트 ======================= -->
   <script>
     let currentUser = null;
+    let allCourses = [];
+    let selectedCourseId = null;
+    let currentCourseOverview = null;
+    let currentAssignmentsMap = {};
 
-    // 사용자 상태 정보 가져오기 및 세션 검증
+    // 1. 인증 확인 및 초기 화면 로드
     async function checkAuth() {
       try {
         const response = await fetch('/api/me');
@@ -104,30 +292,35 @@
         const data = await response.json();
         currentUser = data.user;
 
-        // 상단 정보 업데이트
         document.getElementById('userName').textContent = `${currentUser.name} 님`;
         const roleTag = document.getElementById('userRoleTag');
+
         if (currentUser.role === 'professor') {
           roleTag.textContent = '교수';
           roleTag.style.backgroundColor = 'var(--primary-light)';
           roleTag.style.color = 'var(--primary)';
-          // 교수용 강좌 생성 버튼 노출
-          document.getElementById('btnCreateCourse').style.display = 'inline-flex';
+          document.getElementById('professorView').style.display = 'block';
+          document.getElementById('studentView').style.display = 'none';
+
+          // 교수용 강좌 목록 및 대시보드 로드
+          await loadProfessorCourses();
         } else {
           roleTag.textContent = '학생';
           roleTag.style.backgroundColor = 'var(--success-light)';
           roleTag.style.color = 'var(--success)';
-        }
+          document.getElementById('professorView').style.display = 'none';
+          document.getElementById('studentView').style.display = 'block';
 
-        // 강좌 목록 로드
-        loadCourses();
+          // 학생용 강좌 목록 로드
+          await loadStudentCourses();
+        }
       } catch (err) {
         console.error(err);
         window.location.href = 'index.html';
       }
     }
 
-    // 로그아웃 처리
+    // 로그아웃
     async function logout() {
       try {
         await fetch('/api/logout', { method: 'POST' });
@@ -137,9 +330,677 @@
       }
     }
 
-    // 강좌 목록 불러오기 API 연동
-    async function loadCourses() {
-      const container = document.getElementById('courseContainer');
+    // ==========================================
+    //  교수용 통합 대시보드 (방식 A) 로직
+    // ==========================================
+
+    // 강좌 목록 가져오기 및 탭 렌더링
+    async function loadProfessorCourses() {
+      try {
+        const response = await fetch('/api/courses');
+        if (!response.ok) throw new Error('Failed to fetch courses');
+        allCourses = await response.json();
+
+        const tabsContainer = document.getElementById('courseTabsBar');
+        tabsContainer.innerHTML = '';
+
+        if (allCourses.length === 0) {
+          document.getElementById('courseDashboardArea').style.display = 'none';
+          tabsContainer.innerHTML = '<p style="color: var(--text-light); padding: 1rem 0;">개설된 강좌가 없습니다. 상단의 "+ 새 강좌 개설" 버튼을 눌러 첫 강좌를 개설해 보세요.</p>';
+          return;
+        }
+
+        document.getElementById('courseDashboardArea').style.display = 'block';
+
+        // 이전에 선택된 강좌가 없거나 삭제되었으면 첫 번째 강좌 선택
+        if (!selectedCourseId || !allCourses.some(c => c.id === Number(selectedCourseId))) {
+          selectedCourseId = allCourses[0].id;
+        }
+
+        allCourses.forEach(course => {
+          const btn = document.createElement('button');
+          btn.className = `course-tab-btn ${course.id === Number(selectedCourseId) ? 'active' : ''}`;
+          btn.innerHTML = `
+            <span>📚 ${escapeHtml(course.title)}</span>
+          `;
+          btn.onclick = () => selectCourseTab(course.id);
+          tabsContainer.appendChild(btn);
+        });
+
+        // 선택된 강좌의 상세 개요 로드
+        await loadCourseOverview(selectedCourseId);
+      } catch (err) {
+        console.error(err);
+        alert('강좌 목록을 불러오지 못했습니다.');
+      }
+    }
+
+    // 강좌 탭 전환
+    async function selectCourseTab(courseId) {
+      selectedCourseId = courseId;
+      // 탭 스타일 갱신
+      document.querySelectorAll('.course-tab-btn').forEach((btn, index) => {
+        if (allCourses[index] && allCourses[index].id === Number(courseId)) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      await loadCourseOverview(courseId);
+    }
+
+    // 특정 강좌의 통합 개요 (과제 목록 + 학생 현황) API 호출 및 렌더링
+    async function loadCourseOverview(courseId) {
+      try {
+        const response = await fetch(`/api/courses/${courseId}/overview`);
+        if (!response.ok) throw new Error('Failed to load course overview');
+        currentCourseOverview = await response.json();
+
+        const { course, assignments, students, stats } = currentCourseOverview;
+
+        // 1. 강좌 기본 정보 배너 갱신
+        document.getElementById('currentCourseTitle').textContent = course.title;
+        document.getElementById('currentCourseDesc').textContent = course.description;
+        document.getElementById('linkToLecturePage').href = `lecture.html?id=${course.id}`;
+
+        // 2. 통계 바 갱신
+        document.getElementById('statTotalStudents').textContent = `${stats.totalStudents}명`;
+        document.getElementById('statTotalAssignments').textContent = `${stats.totalAssignments}개`;
+        document.getElementById('statTotalSubmissions').textContent = `${stats.totalSubmissions}건`;
+
+        const maxPossibleSubmissions = stats.totalStudents * stats.totalAssignments;
+        const rate = maxPossibleSubmissions > 0 
+          ? Math.round((stats.totalSubmissions / maxPossibleSubmissions) * 100) 
+          : 0;
+        document.getElementById('statSubmissionRate').textContent = `${rate}%`;
+
+        // 3. 과제 목록 렌더링
+        renderAssignmentsPanel(assignments, stats.totalStudents);
+
+        // 4. 가입 학생 및 과제 제출 현황 테이블 렌더링
+        renderStudentsTable(students, assignments);
+
+      } catch (err) {
+        console.error(err);
+        alert('강좌 개요 정보를 불러오지 못했습니다.');
+      }
+    }
+
+    // 좌측 패널: 과제 목록 렌더링
+    function renderAssignmentsPanel(assignments, totalStudents) {
+      const container = document.getElementById('assignmentListContainer');
+      document.getElementById('assCountBadge').textContent = assignments.length;
+      currentAssignmentsMap = {};
+
+      if (assignments.length === 0) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-light);">
+            <p style="margin-bottom: 0.75rem;">등록된 과제가 없습니다.</p>
+            <button class="btn btn-secondary btn-sm" onclick="openAssignmentModal()">+ 첫 과제 생성하기</button>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = '';
+      assignments.forEach((ass, idx) => {
+        currentAssignmentsMap[ass.id] = ass;
+        const card = document.createElement('div');
+        card.className = 'assignment-mini-card';
+
+        let rubric = [];
+        try { rubric = JSON.parse(ass.rubric); } catch (e) { }
+        const rubricTotal = rubric.reduce((sum, item) => sum + (parseInt(item.max_score) || 0), 0);
+
+        const subCount = ass.submissionCount || 0;
+        const isAllSubmitted = totalStudents > 0 && subCount >= totalStudents;
+        const submissionBadge = isAllSubmitted 
+          ? `<span class="tag-badge tag-badge-success">제출 완료 (${subCount}/${totalStudents}명)</span>`
+          : `<span class="tag-badge ${subCount > 0 ? 'tag-badge-primary' : 'tag-badge-gray'}">제출 ${subCount}/${totalStudents}명</span>`;
+
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.4rem;">
+            <h4 style="font-size: 0.98rem; font-weight: 700; color: var(--text-main); margin: 0;">
+              ${idx + 1}. ${escapeHtml(ass.title)}
+            </h4>
+            ${submissionBadge}
+          </div>
+          <p style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 0.6rem; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+            ${escapeHtml(ass.description)}
+          </p>
+          <div style="font-size: 0.8rem; color: var(--text-light); display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <span>⏱ <strong>마감:</strong> ${new Date(ass.due_date).toLocaleDateString()} ${new Date(ass.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            <span>🎯 <strong>루브릭 총점:</strong> ${rubricTotal}점</span>
+            <span>📁 <strong>형식:</strong> ${escapeHtml(ass.allowed_extensions || '모두 허용')}</span>
+            ${ass.averageScore !== null ? `<span>⭐ <strong>평균:</strong> ${ass.averageScore}점</span>` : ''}
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--border-color); padding-top: 0.6rem;">
+            <a href="evaluation.html?assignmentId=${ass.id}" class="btn btn-primary btn-sm" style="font-size: 0.78rem; padding: 0.3rem 0.6rem;">
+              📊 제출 및 평가 관리
+            </a>
+            <div style="display: flex; gap: 0.25rem;">
+              <button class="btn btn-secondary btn-sm" style="font-size: 0.78rem; padding: 0.3rem 0.5rem;" onclick="openEditAssignmentModal(${ass.id})">수정</button>
+              <button class="btn btn-danger btn-sm" style="font-size: 0.78rem; padding: 0.3rem 0.5rem;" onclick="deleteAssignment(${ass.id})">삭제</button>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 우측 패널: 가입 학생 및 과제 제출 현황 테이블 렌더링
+    function renderStudentsTable(students, assignments) {
+      document.getElementById('studentCountBadge').textContent = `${students.length}명`;
+      const theadRow = document.getElementById('studentTableHeaderRow');
+      const tbody = document.getElementById('studentTableBody');
+
+      tbody.innerHTML = '';
+
+      if (students.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-light); padding: 2.5rem 0;">
+              가입된 학생 정보가 없습니다.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      students.forEach(student => {
+        const tr = document.createElement('tr');
+        tr.className = 'student-row';
+        tr.dataset.username = student.username.toLowerCase();
+        tr.dataset.name = student.name.toLowerCase();
+
+        // 과제별 제출 칩 목록 생성
+        let subChipsHtml = '';
+        if (assignments.length === 0) {
+          subChipsHtml = '<span style="color: var(--text-light); font-size: 0.8rem;">등록된 과제 없음</span>';
+        } else {
+          subChipsHtml = '<div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">';
+          assignments.forEach((ass, idx) => {
+            const sub = student.submissions[ass.id];
+            if (sub) {
+              const scoreText = (typeof sub.score === 'number') ? `${sub.score}점` : '채점중';
+              subChipsHtml += `
+                <span class="sub-chip sub-chip-done" title="클릭하여 상세 보기" onclick="viewSubmissionDetail(${sub.submission_id}, '${escapeHtml(student.name)}', '${escapeHtml(ass.title)}')">
+                  ✓ 과제${idx + 1}: <strong>${scoreText}</strong>
+                </span>
+              `;
+            } else {
+              subChipsHtml += `
+                <span class="sub-chip sub-chip-none" title="미제출">
+                  과제${idx + 1}: 미제출
+                </span>
+              `;
+            }
+          });
+          subChipsHtml += '</div>';
+        }
+
+        const rateBadge = assignments.length > 0
+          ? `<span class="tag-badge ${student.submittedCount === assignments.length ? 'tag-badge-success' : (student.submittedCount > 0 ? 'tag-badge-primary' : 'tag-badge-gray')}">${student.submittedCount}/${assignments.length}</span>`
+          : '-';
+
+        tr.innerHTML = `
+          <td style="font-weight: 600; color: var(--text-main);">${escapeHtml(student.username)}</td>
+          <td style="font-weight: 500;">${escapeHtml(student.name)}</td>
+          <td>${subChipsHtml}</td>
+          <td style="text-align: center;">${rateBadge}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 학생 검색 필터
+    function filterStudentTable() {
+      const keyword = document.getElementById('studentSearchInput').value.trim().toLowerCase();
+      const rows = document.querySelectorAll('.student-row');
+      rows.forEach(row => {
+        const u = row.dataset.username || '';
+        const n = row.dataset.name || '';
+        if (u.includes(keyword) || n.includes(keyword)) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    }
+
+    // 제출물 상세 및 평가 결과 모달 보기
+    async function viewSubmissionDetail(submissionId, studentName, assignmentTitle) {
+      const modal = document.getElementById('evalDetailModal');
+      const titleEl = document.getElementById('evalDetailModalTitle');
+      const contentEl = document.getElementById('evalDetailContent');
+
+      titleEl.textContent = `${studentName} 학생 - [${assignmentTitle}] 평가 상세`;
+      contentEl.innerHTML = '<p style="text-align: center; color: var(--text-light); padding: 1.5rem 0;">평가 상세 정보를 불러오는 중...</p>';
+      modal.classList.add('active');
+
+      try {
+        const response = await fetch(`/api/submissions/${submissionId}/evaluation`);
+        if (!response.ok) throw new Error('Failed to load evaluation detail');
+        const data = await response.json();
+
+        let rubric = [];
+        try { rubric = JSON.parse(data.assignment_rubric); } catch (e) { }
+        const rubricTotal = rubric.reduce((sum, item) => sum + (parseInt(item.max_score) || 0), 0);
+
+        let aiBadge = '';
+        if (typeof data.ai_involvement_score === 'number' && data.ai_involvement_score > 0) {
+          const aiPercent = Math.round(data.ai_involvement_score * 100);
+          aiBadge = `<span class="tag-badge tag-badge-danger" style="margin-left: 0.5rem;">AI 관여도 추정: ${aiPercent}%</span>`;
+        }
+
+        contentEl.innerHTML = `
+          <div style="background-color: var(--bg-primary); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; border: 1px solid var(--border-color);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <span style="font-size: 0.9rem; color: var(--text-muted);">제출 파일: <strong>${escapeHtml(data.file_name)}</strong></span>
+              <a href="/api/submissions/${submissionId}/download" class="btn btn-secondary btn-sm" style="font-size: 0.78rem;">📥 제출 파일 다운로드</a>
+            </div>
+            <div style="font-size: 0.85rem; color: var(--text-light);">
+              제출 일시: ${new Date(data.submitted_at).toLocaleString()}
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; background: var(--primary-light); padding: 1rem; border-radius: var(--radius-sm);">
+            <div>
+              <span style="font-size: 0.85rem; color: var(--primary); font-weight: 600; display: block;">최종 평가 점수</span>
+              <span style="font-size: 1.8rem; font-weight: 700; color: var(--primary); font-family: var(--font-heading);">${data.score}</span>
+              <span style="font-size: 1rem; color: var(--primary); font-weight: 500;"> / ${rubricTotal} 점</span>
+            </div>
+            ${aiBadge}
+          </div>
+
+          <div>
+            <h4 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-main);">📝 평가 피드백</h4>
+            <div class="feedback-box" style="font-size: 0.88rem; max-height: 250px; overflow-y: auto;">
+              ${escapeHtml(data.feedback || '작성된 피드백이 없습니다.')}
+            </div>
+          </div>
+        `;
+      } catch (err) {
+        contentEl.innerHTML = '<p style="color: var(--danger); text-align: center;">상세 정보를 불러오지 못했습니다.</p>';
+      }
+    }
+
+    function closeEvalDetailModal() {
+      document.getElementById('evalDetailModal').classList.remove('active');
+    }
+
+    // ==========================================
+    //  강좌 생성 / 수정 / 삭제 모달 로직
+    // ==========================================
+
+    function openCreateModal() {
+      document.getElementById('createModal').classList.add('active');
+    }
+    function closeCreateModal() {
+      document.getElementById('createModal').classList.remove('active');
+      document.getElementById('createCourseForm').reset();
+    }
+
+    document.getElementById('createCourseForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('newCourseTitle').value;
+      const description = document.getElementById('newCourseDesc').value;
+
+      try {
+        const res = await fetch('/api/courses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, description })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          closeCreateModal();
+          selectedCourseId = data.courseId;
+          await loadProfessorCourses();
+        } else {
+          const data = await res.json();
+          alert(data.error || '강좌 개설에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신에 실패했습니다.');
+      }
+    });
+
+    function openEditCurrentCourseModal() {
+      if (!currentCourseOverview || !currentCourseOverview.course) return;
+      const c = currentCourseOverview.course;
+      document.getElementById('editCourseId').value = c.id;
+      document.getElementById('editCourseTitle').value = c.title;
+      document.getElementById('editCourseDesc').value = c.description;
+      document.getElementById('editModal').classList.add('active');
+    }
+    function closeEditModal() {
+      document.getElementById('editModal').classList.remove('active');
+      document.getElementById('editCourseForm').reset();
+    }
+
+    document.getElementById('editCourseForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('editCourseId').value;
+      const title = document.getElementById('editCourseTitle').value;
+      const description = document.getElementById('editCourseDesc').value;
+
+      try {
+        const res = await fetch(`/api/courses/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, description })
+        });
+        if (res.ok) {
+          closeEditModal();
+          await loadProfessorCourses();
+        } else {
+          const data = await res.json();
+          alert(data.error || '강좌 수정에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신에 실패했습니다.');
+      }
+    });
+
+    async function deleteCurrentCourse() {
+      if (!selectedCourseId) return;
+      if (!confirm('정말로 이 강좌를 삭제하시겠습니까?\n강좌에 포함된 모든 과제와 학생 제출 내역이 영구히 삭제됩니다.')) return;
+
+      try {
+        const res = await fetch(`/api/courses/${selectedCourseId}`, { method: 'DELETE' });
+        if (res.ok) {
+          alert('강좌가 삭제되었습니다.');
+          selectedCourseId = null;
+          await loadProfessorCourses();
+        } else {
+          const data = await res.json();
+          alert(data.error || '강좌 삭제에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신에 실패했습니다.');
+      }
+    }
+
+    // ==========================================
+    //  과제 생성 / 수정 / 삭제 모달 로직
+    // ==========================================
+
+    function openAssignmentModal() {
+      document.getElementById('assignmentModalTitle').textContent = '새 과제 생성';
+      document.getElementById('btnSaveAssignment').textContent = '생성';
+      document.getElementById('editAssId').value = '';
+      document.getElementById('createAssignmentForm').reset();
+      const mdInput = document.getElementById('assMdFile');
+      if (mdInput) mdInput.value = '';
+
+      document.getElementById('assignmentModal').classList.add('active');
+      document.getElementById('rubricBuilderContainer').innerHTML = '';
+      document.getElementById('rubricTotalScore').textContent = '0';
+      addRubricRow();
+    }
+
+    function openEditAssignmentModal(id) {
+      const ass = currentAssignmentsMap[id];
+      if (!ass) return;
+
+      document.getElementById('assignmentModalTitle').textContent = '과제 수정';
+      document.getElementById('btnSaveAssignment').textContent = '저장';
+      document.getElementById('editAssId').value = ass.id;
+      document.getElementById('assTitle').value = ass.title;
+      document.getElementById('assDesc').value = ass.description;
+      document.getElementById('assAllowedExt').value = ass.allowed_extensions || '';
+
+      const localDate = new Date(ass.due_date);
+      localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
+      document.getElementById('assDueDate').value = localDate.toISOString().slice(0, 16);
+
+      const container = document.getElementById('rubricBuilderContainer');
+      container.innerHTML = '';
+      try {
+        const rubric = JSON.parse(ass.rubric);
+        if (Array.isArray(rubric) && rubric.length > 0) {
+          rubric.forEach(r => {
+            const row = document.createElement('div');
+            row.className = 'rubric-row';
+            row.innerHTML = `
+              <input type="text" class="form-control rubric-item-input" value="${escapeHtml(r.item)}" required>
+              <input type="number" class="form-control rubric-score-input" value="${r.max_score}" min="1" required oninput="calculateRubricTotal()">
+              <button type="button" class="btn btn-danger btn-sm" onclick="removeRubricRow(this)">삭제</button>
+            `;
+            container.appendChild(row);
+          });
+        } else {
+          addRubricRow();
+        }
+      } catch (e) {
+        addRubricRow();
+      }
+
+      calculateRubricTotal();
+      document.getElementById('assignmentModal').classList.add('active');
+    }
+
+    function closeAssignmentModal() {
+      document.getElementById('assignmentModal').classList.remove('active');
+      document.getElementById('createAssignmentForm').reset();
+      document.getElementById('editAssId').value = '';
+    }
+
+    function addRubricRow() {
+      const container = document.getElementById('rubricBuilderContainer');
+      const row = document.createElement('div');
+      row.className = 'rubric-row';
+      row.innerHTML = `
+        <input type="text" class="form-control rubric-item-input" placeholder="평가 항목 (예: 기능 구현)" required>
+        <input type="number" class="form-control rubric-score-input" placeholder="배점" min="1" value="20" required oninput="calculateRubricTotal()">
+        <button type="button" class="btn btn-danger btn-sm" onclick="removeRubricRow(this)">삭제</button>
+      `;
+      container.appendChild(row);
+      calculateRubricTotal();
+    }
+
+    function removeRubricRow(button) {
+      const container = document.getElementById('rubricBuilderContainer');
+      if (container.querySelectorAll('.rubric-row').length <= 1) {
+        alert('루브릭 항목은 최소 1개 이상이어야 합니다.');
+        return;
+      }
+      button.parentElement.remove();
+      calculateRubricTotal();
+    }
+
+    function calculateRubricTotal() {
+      let total = 0;
+      document.querySelectorAll('.rubric-score-input').forEach(input => {
+        total += parseInt(input.value, 10) || 0;
+      });
+      document.getElementById('rubricTotalScore').textContent = total;
+    }
+
+    // 마크다운 파일 자동 파싱
+    function handleMdFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const text = e.target.result;
+        parseAndFillAssignmentMd(text);
+      };
+      reader.readAsText(file);
+    }
+
+    function parseAndFillAssignmentMd(text) {
+      if (!text) return;
+
+      const titleMatch = text.match(/##\s*제목\s*\n+([\s\S]*?)(?=\n+#{1,4}\s+|$)/i);
+      if (titleMatch && titleMatch[1]) {
+        document.getElementById('assTitle').value = titleMatch[1].trim();
+      }
+
+      let descriptionText = '';
+      const descMatch = text.match(/####\s*과제\s*설명\s*\n+([\s\S]*?)(?=\n+####\s*마감일|$)/i);
+      if (descMatch && descMatch[1]) {
+        descriptionText = descMatch[1].trim();
+      } else {
+        const fallbackDesc = text.match(/##\s*제목\s*\n+.*?\n+([\s\S]*?)(?=\n+####\s*마감일|$)/i);
+        if (fallbackDesc && fallbackDesc[1]) {
+          descriptionText = fallbackDesc[1].trim();
+        }
+      }
+      if (descriptionText) {
+        document.getElementById('assDesc').value = descriptionText;
+      }
+
+      const dateMatch = text.match(/####\s*마감일\s*[:\s]*([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}(?:\s+[0-9]{1,2}:[0-9]{1,2})?)/i);
+      if (dateMatch && dateMatch[1]) {
+        const parts = dateMatch[1].trim().replace(/\//g, '-').split(/\s+/);
+        const dateParts = parts[0].split('-');
+        const yyyy = dateParts[0];
+        const mm = dateParts[1].padStart(2, '0');
+        const dd = dateParts[2].padStart(2, '0');
+        let timeStr = parts[1] ? parts[1] : '23:59';
+        if (timeStr.split(':').length === 2) {
+          const timeParts = timeStr.split(':');
+          timeStr = `${timeParts[0].padStart(2, '0')}:${timeParts[1].padStart(2, '0')}`;
+        }
+        document.getElementById('assDueDate').value = `${yyyy}-${mm}-${dd}T${timeStr}`;
+      }
+
+      const extMatch = text.match(/####\s*제출\s*허용\s*파일\s*형식\s*\n+([\s\S]*?)(?=\n+####\s*|$)/i);
+      if (extMatch && extMatch[1]) {
+        document.getElementById('assAllowedExt').value = extMatch[1].trim().split('\n')[0].trim();
+      }
+
+      const rubricMatch = text.match(/####\s*평가\s*기준\s*\n+([\s\S]*?)(?=\n+#{1,4}\s+|$)/i);
+      const rubricSection = rubricMatch ? rubricMatch[1] : text;
+      const lines = rubricSection.split('\n');
+      const parsedRubric = [];
+
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+          const cols = trimmed.split('|').map(c => c.trim()).filter(c => c !== '');
+          if (cols.length >= 2) {
+            const itemStr = cols[0].replace(/\*\*/g, '').trim();
+            const scoreStr = cols[1].replace(/\*\*/g, '').trim();
+            if (
+              !itemStr.includes('평가 영역') &&
+              !itemStr.includes('평가항목') &&
+              !itemStr.includes('---') &&
+              !itemStr.includes('합계') &&
+              !scoreStr.includes('---')
+            ) {
+              const scoreNum = parseInt(scoreStr, 10);
+              if (!isNaN(scoreNum) && itemStr !== '') {
+                parsedRubric.push({ item: itemStr, max_score: scoreNum });
+              }
+            }
+          }
+        }
+      });
+
+      const container = document.getElementById('rubricBuilderContainer');
+      container.innerHTML = '';
+      if (parsedRubric.length > 0) {
+        parsedRubric.forEach(r => {
+          const row = document.createElement('div');
+          row.className = 'rubric-row';
+          row.innerHTML = `
+            <input type="text" class="form-control rubric-item-input" value="${escapeHtml(r.item)}" required>
+            <input type="number" class="form-control rubric-score-input" value="${r.max_score}" min="1" required oninput="calculateRubricTotal()">
+            <button type="button" class="btn btn-danger btn-sm" onclick="removeRubricRow(this)">삭제</button>
+          `;
+          container.appendChild(row);
+        });
+      } else {
+        addRubricRow();
+      }
+      calculateRubricTotal();
+    }
+
+    document.getElementById('createAssignmentForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const editAssId = document.getElementById('editAssId').value;
+      const title = document.getElementById('assTitle').value;
+      const description = document.getElementById('assDesc').value;
+      const due_date = document.getElementById('assDueDate').value;
+      const allowed_extensions = document.getElementById('assAllowedExt').value;
+
+      const rubricItems = [];
+      const itemInputs = document.querySelectorAll('.rubric-item-input');
+      const scoreInputs = document.querySelectorAll('.rubric-score-input');
+
+      for (let i = 0; i < itemInputs.length; i++) {
+        const itemVal = itemInputs[i].value.trim();
+        const scoreVal = parseInt(scoreInputs[i].value, 10);
+        if (itemVal && !isNaN(scoreVal)) {
+          rubricItems.push({ item: itemVal, max_score: scoreVal });
+        }
+      }
+
+      if (rubricItems.length === 0) {
+        alert('최소 1개 이상의 루브릭 항목을 설정해야 합니다.');
+        return;
+      }
+
+      const payload = {
+        title,
+        description,
+        rubric: JSON.stringify(rubricItems),
+        due_date,
+        allowed_extensions
+      };
+
+      try {
+        let res;
+        if (editAssId) {
+          res = await fetch(`/api/assignments/${editAssId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          res = await fetch(`/api/courses/${selectedCourseId}/assignments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (res.ok) {
+          closeAssignmentModal();
+          await loadCourseOverview(selectedCourseId);
+        } else {
+          const data = await res.json();
+          alert(data.error || '과제 저장에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신에 실패했습니다.');
+      }
+    });
+
+    async function deleteAssignment(assId) {
+      if (!confirm('정말로 이 과제를 삭제하시겠습니까?\n제출된 학생들의 모든 파일 및 평가 결과도 함께 삭제됩니다.')) return;
+      try {
+        const res = await fetch(`/api/assignments/${assId}`, { method: 'DELETE' });
+        if (res.ok) {
+          await loadCourseOverview(selectedCourseId);
+        } else {
+          const data = await res.json();
+          alert(data.error || '과제 삭제에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신에 실패했습니다.');
+      }
+    }
+
+    // ==========================================
+    //  학생용 화면 로드 로직
+    // ==========================================
+    async function loadStudentCourses() {
+      const container = document.getElementById('studentCourseContainer');
       container.innerHTML = '<p style="color: var(--text-light);">강좌 목록을 불러오는 중...</p>';
 
       try {
@@ -156,24 +1017,12 @@
         courses.forEach(course => {
           const card = document.createElement('div');
           card.className = 'card';
-
-          // 교수인 경우 수정 버튼 렌더링
-          let actionsHtml = `
-            <div style="display: flex; gap: 0.5rem;">
-              <a href="lecture.html?id=${course.id}" class="btn btn-primary btn-sm">이동</a>
-          `;
-          if (currentUser && currentUser.role === 'professor') {
-            actionsHtml += `
-              <button class="btn btn-secondary btn-sm" onclick="openEditModal(${course.id}, '${escapeHtml(course.title)}', '${escapeHtml(course.description)}')">수정</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteCourse(${course.id})">삭제</button>
-            `;
-          }
-          actionsHtml += `</div>`;
-
           card.innerHTML = `
             <h3 class="card-title">${escapeHtml(course.title)}</h3>
             <p class="card-desc" style="min-height: 48px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${escapeHtml(course.description)}</p>
-            ${actionsHtml}
+            <div style="margin-top: 1rem;">
+              <a href="lecture.html?id=${course.id}" class="btn btn-primary btn-sm" style="width: 100%; text-align: center;">강좌 입장 및 과제 확인 &rarr;</a>
+            </div>
           `;
           container.appendChild(card);
         });
@@ -182,116 +1031,10 @@
       }
     }
 
-    // 강좌 생성 모달 제어
-    function openCreateModal() {
-      const modal = document.getElementById('createModal');
-      modal.classList.add('active');
-    }
-
-    function closeCreateModal() {
-      const modal = document.getElementById('createModal');
-      modal.classList.remove('active');
-      document.getElementById('createCourseForm').reset();
-    }
-
-    // 강좌 생성 처리
-    document.getElementById('createCourseForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const title = document.getElementById('newCourseTitle').value;
-      const description = document.getElementById('newCourseDesc').value;
-
-      try {
-        const response = await fetch('/api/courses', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ title, description })
-        });
-
-        if (response.ok) {
-          closeCreateModal();
-          loadCourses(); // 목록 새로고침
-        } else {
-          const data = await response.json();
-          alert(data.error || '강좌 개설에 실패했습니다.');
-        }
-      } catch (err) {
-        alert('서버 통신에 실패했습니다.');
-      }
-    });
-
-    // 강좌 수정 모달 제어
-    function openEditModal(id, title, description) {
-      document.getElementById('editCourseId').value = id;
-      document.getElementById('editCourseTitle').value = title;
-      document.getElementById('editCourseDesc').value = description;
-
-      const modal = document.getElementById('editModal');
-      modal.classList.add('active');
-    }
-
-    function closeEditModal() {
-      const modal = document.getElementById('editModal');
-      modal.classList.remove('active');
-      document.getElementById('editCourseForm').reset();
-    }
-
-    // 강좌 수정 처리
-    document.getElementById('editCourseForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const id = document.getElementById('editCourseId').value;
-      const title = document.getElementById('editCourseTitle').value;
-      const description = document.getElementById('editCourseDesc').value;
-
-      try {
-        const response = await fetch(`/api/courses/${id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ title, description })
-        });
-
-        if (response.ok) {
-          closeEditModal();
-          loadCourses(); // 목록 새로고침
-        } else {
-          const data = await response.json();
-          alert(data.error || '강좌 수정에 실패했습니다.');
-        }
-      } catch (err) {
-        alert('서버 통신에 실패했습니다.');
-      }
-    });
-
-    // 강좌 삭제 처리
-    async function deleteCourse(id) {
-      if (!confirm('정말로 이 강좌를 삭제하시겠습니까?\n이 강좌와 관련된 모든 과제, 제출, 평가 데이터가 영구적으로 삭제됩니다.')) {
-        return;
-      }
-
-      try {
-        const response = await fetch(`/api/courses/${id}`, {
-          method: 'DELETE'
-        });
-
-        if (response.ok) {
-          alert('강좌가 성공적으로 삭제되었습니다.');
-          loadCourses(); // 목록 새로고침
-        } else {
-          const data = await response.json();
-          alert(data.error || '강좌 삭제에 실패했습니다.');
-        }
-      } catch (err) {
-        alert('서버 통신에 실패했습니다.');
-      }
-    }
-
     // HTML 특수기호 이스케이프
     function escapeHtml(str) {
       if (!str) return '';
-      return str
+      return String(str)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -299,7 +1042,7 @@
         .replace(/'/g, "&#039;");
     }
 
-    // 페이지 로드 시 세션 체크
+    // 초기화
     window.onload = checkAuth;
   </script>
 </body>

@@ -332,6 +332,115 @@ app.get('/api/courses/:courseId/assignments', isAuthenticated, (req, res) => {
   });
 });
 
+// 특정 강좌의 통합 개요(과제 목록 + 가입 학생 정보 및 과제별 제출 현황) 조회 API (교수 전용)
+app.get('/api/courses/:courseId/overview', isAuthenticated, isProfessor, (req, res) => {
+  const courseId = req.params.courseId;
+
+  // 1. 강좌 기본 정보 조회
+  db.get("SELECT * FROM courses WHERE id = ?", [courseId], (courseErr, course) => {
+    if (courseErr) {
+      return res.status(500).json({ error: 'Database error while fetching course: ' + courseErr.message });
+    }
+    if (!course) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    // 2. 해당 강좌의 과제 목록 조회
+    db.all("SELECT * FROM assignments WHERE course_id = ? ORDER BY id ASC", [courseId], (assErr, assignments) => {
+      if (assErr) {
+        return res.status(500).json({ error: 'Database error while fetching assignments: ' + assErr.message });
+      }
+
+      // 3. 가입된 학생 목록 조회
+      db.all("SELECT username, name FROM users WHERE role = 'student' ORDER BY name ASC, username ASC", [], (stuErr, students) => {
+        if (stuErr) {
+          return res.status(500).json({ error: 'Database error while fetching students: ' + stuErr.message });
+        }
+
+        // 4. 해당 강좌 과제들에 대한 제출 및 평가 데이터 조회
+        const subQuery = `
+          SELECT 
+            s.id as submission_id,
+            s.assignment_id,
+            s.student_id,
+            s.file_name,
+            s.file_path,
+            s.submitted_at,
+            e.id as evaluation_id,
+            e.score,
+            e.feedback,
+            e.ai_involvement_score,
+            e.evaluated_at
+          FROM submissions s
+          JOIN assignments a ON s.assignment_id = a.id
+          LEFT JOIN evaluations e ON s.id = e.submission_id
+          WHERE a.course_id = ?
+        `;
+
+        db.all(subQuery, [courseId], (subErr, submissions) => {
+          if (subErr) {
+            return res.status(500).json({ error: 'Database error while fetching submissions: ' + subErr.message });
+          }
+
+          // 제출 맵핑 (key: `${student_id}_${assignment_id}`)
+          const submissionMap = {};
+          let totalSubmissionCount = 0;
+
+          submissions.forEach(sub => {
+            submissionMap[`${sub.student_id}_${sub.assignment_id}`] = sub;
+            totalSubmissionCount++;
+          });
+
+          // 과제별 제출 통계 계산
+          const assignmentsWithStats = assignments.map(ass => {
+            const assSubs = submissions.filter(s => s.assignment_id === ass.id);
+            const scores = assSubs.filter(s => typeof s.score === 'number').map(s => s.score);
+            const avgScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null;
+
+            return {
+              ...ass,
+              submissionCount: assSubs.length,
+              totalStudents: students.length,
+              averageScore: avgScore
+            };
+          });
+
+          // 학생별 과제 제출 현황 매트릭스 구성
+          const studentsWithSubmissions = students.map(student => {
+            const studentSubs = {};
+            let studentSubCount = 0;
+
+            assignments.forEach(ass => {
+              const sub = submissionMap[`${student.username}_${ass.id}`] || null;
+              studentSubs[ass.id] = sub;
+              if (sub) studentSubCount++;
+            });
+
+            return {
+              username: student.username,
+              name: student.name,
+              submittedCount: studentSubCount,
+              totalAssignments: assignments.length,
+              submissions: studentSubs
+            };
+          });
+
+          res.json({
+            course: course,
+            assignments: assignmentsWithStats,
+            students: studentsWithSubmissions,
+            stats: {
+              totalStudents: students.length,
+              totalAssignments: assignments.length,
+              totalSubmissions: totalSubmissionCount
+            }
+          });
+        });
+      });
+    });
+  });
+});
+
 // 과제 생성 API (교수 전용)
 app.post('/api/courses/:courseId/assignments', isAuthenticated, isProfessor, (req, res) => {
   const { title, description, rubric, due_date, allowed_extensions } = req.body;
