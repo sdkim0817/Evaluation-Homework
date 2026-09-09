@@ -261,19 +261,33 @@
             const subData = await subRes.json();
 
             if (subData) {
-              // 이미 제출한 경우
-              buttonHtml = `
-                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
-                  <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span class="status-pill status-pill-success">제출 완료</span>
-                    <a href="evaluation-results.html?submissionId=${subData.submission_id}" class="btn btn-secondary btn-sm">결과 및 피드백 확인 (${subData.score} / ${rubricTotal}점)</a>
+              const submitCount = subData.submit_count || 1;
+              if (submitCount >= 2) {
+                // 2회 제출 완료 (더 이상 제출 불가)
+                buttonHtml = `
+                  <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                      <span class="status-pill status-pill-success">제출 완료 (2/2회)</span>
+                      <a href="evaluation-results.html?submissionId=${subData.submission_id}" class="btn btn-secondary btn-sm">2차 결과 확인 (${subData.score} / ${rubricTotal}점)</a>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" disabled style="opacity: 0.6; cursor: not-allowed; width: 100%;">제출 횟수 초과 (2/2회 완료)</button>
                   </div>
-                  <button class="btn btn-primary btn-sm" onclick="openSubmitModal(${ass.id})">다시 제출하기</button>
-                </div>
-              `;
+                `;
+              } else {
+                // 1회 제출 완료 (재제출 1회 남음)
+                buttonHtml = `
+                  <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                      <span class="status-pill status-pill-primary">1차 제출 완료 (1/2회)</span>
+                      <a href="evaluation-results.html?submissionId=${subData.submission_id}" class="btn btn-secondary btn-sm">1차 결과 확인 (${subData.score} / ${rubricTotal}점)</a>
+                    </div>
+                    <button class="btn btn-primary btn-sm" style="width: 100%;" onclick="openSubmitModal(${ass.id})">2차 재제출하기 (마지막 기회)</button>
+                  </div>
+                `;
+              }
             } else {
-              // 미제출 상태
-              buttonHtml = `<button class="btn btn-primary btn-sm" onclick="openSubmitModal(${ass.id})">과제 제출하기</button>`;
+              // 미제출 상태 (0/2회)
+              buttonHtml = `<button class="btn btn-primary btn-sm" onclick="openSubmitModal(${ass.id})">과제 제출하기 (1/2회)</button>`;
             }
           }
 
@@ -660,15 +674,8 @@
         const data = await response.json();
 
         if (response.ok) {
-          // 로딩 UI 끄기
-          document.getElementById('evaluationLoading').style.display = 'none';
-          document.getElementById('submitActions').style.display = 'flex';
-
-          document.getElementById('submitModal').classList.remove('active');
-          document.getElementById('submitAssignmentForm').reset();
-
-          // 채점 결과 페이지로 바로 이동
-          window.location.href = `evaluation-results.html?submissionId=${data.submissionId}`;
+          // 즉시 응답을 받았으므로 상태 폴링 시작
+          startPollingStatus(data.submissionId);
         } else {
           alert(data.error || '과제 제출에 실패했습니다.');
           document.getElementById('evaluationLoading').style.display = 'none';
@@ -680,6 +687,42 @@
         document.getElementById('submitActions').style.display = 'flex';
       }
     });
+
+    // 백그라운드 평가 상태 폴링 함수
+    let pollingIntervalId = null;
+    function startPollingStatus(submissionId) {
+      if (pollingIntervalId) clearInterval(pollingIntervalId);
+
+      pollingIntervalId = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/submissions/${submissionId}/status`);
+          if (!res.ok) return;
+          const statusData = await res.json();
+
+          if (statusData.status === 'completed') {
+            clearInterval(pollingIntervalId);
+            pollingIntervalId = null;
+
+            document.getElementById('evaluationLoading').style.display = 'none';
+            document.getElementById('submitActions').style.display = 'flex';
+            document.getElementById('submitModal').classList.remove('active');
+            document.getElementById('submitAssignmentForm').reset();
+
+            // 채점 완료 후 결과 페이지로 자동 이동
+            window.location.href = `evaluation-results.html?submissionId=${submissionId}`;
+          } else if (statusData.status === 'failed') {
+            clearInterval(pollingIntervalId);
+            pollingIntervalId = null;
+
+            alert('LLM 평가 처리 중 오류가 발생했습니다.');
+            document.getElementById('evaluationLoading').style.display = 'none';
+            document.getElementById('submitActions').style.display = 'flex';
+          }
+        } catch (pollErr) {
+          console.warn('Status polling error:', pollErr);
+        }
+      }, 2000); // 2초 주기로 폴링
+    }
 
     async function logout() {
       try {

@@ -1,5 +1,6 @@
 Homework-Eval/
 node_modules/
+works/
 *.db
 uploads/
 .env

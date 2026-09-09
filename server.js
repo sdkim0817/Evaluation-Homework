@@ -123,8 +123,27 @@ function initializeDatabase() {
       FOREIGN KEY(submission_id) REFERENCES submissions(id) ON DELETE CASCADE
     )`);
 
+    // 6. 수강 강좌 신청 테이블
+    db.run(`CREATE TABLE IF NOT EXISTS student_courses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id TEXT NOT NULL,
+      course_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(student_id, course_id),
+      FOREIGN KEY(student_id) REFERENCES users(username) ON DELETE CASCADE,
+      FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+    )`);
+
     // 기존 DB 호환을 위한 마이그레이션 (컬럼이 없을 경우 추가)
     db.run("ALTER TABLE evaluations ADD COLUMN ai_involvement_score REAL DEFAULT 0.0", (err) => {
+      // 이미 컬럼이 존재하는 경우 발생하는 에러는 무시
+    });
+
+    db.run("ALTER TABLE submissions ADD COLUMN submit_count INTEGER DEFAULT 1", (err) => {
+      // 이미 컬럼이 존재하는 경우 발생하는 에러는 무시
+    });
+
+    db.run("ALTER TABLE submissions ADD COLUMN status TEXT DEFAULT 'completed'", (err) => {
       // 이미 컬럼이 존재하는 경우 발생하는 에러는 무시
     });
 
@@ -232,6 +251,67 @@ app.get('/api/courses', isAuthenticated, (req, res) => {
       return res.status(500).json({ error: err.message });
     }
     res.json(rows);
+  });
+});
+
+// 내 수강 신청 강좌 목록 조회 API (학생 전용)
+app.get('/api/my-courses', isAuthenticated, (req, res) => {
+  const studentId = req.session.user.username;
+  const query = `
+    SELECT c.* FROM courses c
+    JOIN student_courses sc ON c.id = sc.course_id
+    WHERE sc.student_id = ?
+    ORDER BY c.id ASC
+  `;
+  db.all(query, [studentId], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.json(rows);
+  });
+});
+
+// 내 수강 신청 강좌 선택/저장 API (학생 전용)
+app.post('/api/my-courses', isAuthenticated, (req, res) => {
+  if (req.session.user.role !== 'student') {
+    return res.status(403).json({ error: 'Students only.' });
+  }
+  const studentId = req.session.user.username;
+  const { courseIds } = req.body;
+
+  if (!Array.isArray(courseIds)) {
+    return res.status(400).json({ error: 'courseIds must be an array.' });
+  }
+
+  db.serialize(() => {
+    db.run("DELETE FROM student_courses WHERE student_id = ?", [studentId], (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to update enrollments: ' + err.message });
+      }
+
+      if (courseIds.length === 0) {
+        return res.json({ message: 'Enrollments updated successfully', count: 0 });
+      }
+
+      const stmt = db.prepare("INSERT OR IGNORE INTO student_courses (student_id, course_id) VALUES (?, ?)");
+      let completed = 0;
+      let hasError = false;
+
+      courseIds.forEach(cId => {
+        stmt.run(studentId, cId, (stmtErr) => {
+          if (stmtErr && !hasError) {
+            hasError = true;
+          }
+        });
+      });
+
+      stmt.finalize((finalErr) => {
+        if (finalErr || hasError) {
+          return res.status(500).json({ error: 'Failed to finalize enrollments.' });
+        }
+        res.json({ message: 'Enrollments updated successfully', count: courseIds.length });
+      });
+    });
   });
 });
 
@@ -351,8 +431,15 @@ app.get('/api/courses/:courseId/overview', isAuthenticated, isProfessor, (req, r
         return res.status(500).json({ error: 'Database error while fetching assignments: ' + assErr.message });
       }
 
-      // 3. 가입된 학생 목록 조회
-      db.all("SELECT username, name FROM users WHERE role = 'student' ORDER BY name ASC, username ASC", [], (stuErr, students) => {
+      // 3. 해당 강좌를 선택(수강 등록)한 학생 목록만 조회
+      const enrolledStudentQuery = `
+        SELECT u.username, u.name 
+        FROM users u 
+        JOIN student_courses sc ON u.username = sc.student_id 
+        WHERE u.role = 'student' AND sc.course_id = ? 
+        ORDER BY u.name ASC, u.username ASC
+      `;
+      db.all(enrolledStudentQuery, [courseId], (stuErr, students) => {
         if (stuErr) {
           return res.status(500).json({ error: 'Database error while fetching students: ' + stuErr.message });
         }
@@ -607,52 +694,47 @@ app.post('/api/assignments/:assignmentId/submit', isAuthenticated, upload.single
         submissionContent = `[바이너리 또는 텍스트가 아닌 파일: ${fileName}]`;
       }
 
-      // 3. 이미 제출 이력이 있는지 확인하고 중복 제출 시 기존 정보 삭제 후 진행
+      // 3. 이미 제출 이력이 있는지 확인 (최대 2회 제출 허용)
       db.get(
-        "SELECT id, file_path FROM submissions WHERE assignment_id = ? AND student_id = ?",
+        "SELECT id, file_path, submit_count FROM submissions WHERE assignment_id = ? AND student_id = ?",
         [assignmentId, studentId],
         (findErr, existingSub) => {
           if (findErr) {
             return res.status(500).json({ error: 'Failed to check existing submission: ' + findErr.message });
           }
 
+          // 이미 2회 이상 제출한 경우 차단 (LLM API 미호출 & 업로드 파일 즉시 삭제)
+          if (existingSub && existingSub.submit_count >= 2) {
+            if (fs.existsSync(filePath)) {
+              try { fs.unlinkSync(filePath); } catch (unlinkErr) { }
+            }
+            return res.status(400).json({
+              error: '과제는 최대 2회까지만 제출할 수 있습니다. 이미 2회 제출을 모두 완료하셨습니다.'
+            });
+          }
+
+          const nextSubmitCount = existingSub ? (existingSub.submit_count || 1) + 1 : 1;
+
           const processNewSubmission = () => {
             db.run(
-              "INSERT INTO submissions (assignment_id, student_id, file_path, file_name) VALUES (?, ?, ?, ?)",
-              [assignmentId, studentId, filePath, fileName],
-              async function (subErr) {
+              "INSERT INTO submissions (assignment_id, student_id, file_path, file_name, submit_count, status) VALUES (?, ?, ?, ?, ?, 'processing')",
+              [assignmentId, studentId, filePath, fileName, nextSubmitCount],
+              function (subErr) {
                 if (subErr) {
                   return res.status(500).json({ error: 'Submission recording failed: ' + subErr.message });
                 }
                 const submissionId = this.lastID;
 
-                // 4. 파일 확장자에 따른 전용 평가 함수 디스패칭 (A안)
-                const fileExt = path.extname(fileName).toLowerCase().replace('.', '');
-                let evalResult = { score: 0, feedback: '', ai_involvement_score: 0.0 };
+                // 1. 클라이언트에 즉시 성공 응답 반환 (0.1초 미만)
+                res.json({
+                  message: 'Submission received. Evaluation started.',
+                  submissionId: submissionId,
+                  submitCount: nextSubmitCount,
+                  status: 'processing'
+                });
 
-                if (fileExt === 'pdf') {
-                  evalResult = await evaluatePdfSubmission(assignment, filePath, fileName);
-                } else {
-                  evalResult = await evaluateTextSubmission(assignment, filePath, fileName);
-                }
-
-                // 5. 평가 테이블에 저장
-                db.run(
-                  "INSERT INTO evaluations (submission_id, score, feedback, ai_involvement_score) VALUES (?, ?, ?, ?)",
-                  [submissionId, evalResult.score, evalResult.feedback, evalResult.ai_involvement_score],
-                  function (evalErr) {
-                    if (evalErr) {
-                      return res.status(500).json({ error: 'Evaluation saving failed: ' + evalErr.message });
-                    }
-                    res.json({
-                      message: 'Evaluation completed successfully.',
-                      submissionId: submissionId,
-                      score: evalResult.score,
-                      feedback: evalResult.feedback,
-                      ai_involvement_score: evalResult.ai_involvement_score
-                    });
-                  }
-                );
+                // 2. 백그라운드 비동기 함수 구동 (비블로킹)
+                runAsyncLLMEvaluation(submissionId, assignment, filePath, fileName);
               }
             );
           };
@@ -969,6 +1051,71 @@ app.get('/api/submissions/:submissionId/evaluation', isAuthenticated, (req, res)
   });
 });
 
+// 백그라운드 비동기 LLM 평가 전용 헬퍼 함수
+async function runAsyncLLMEvaluation(submissionId, assignment, filePath, fileName) {
+  try {
+    const fileExt = path.extname(fileName).toLowerCase().replace('.', '');
+    let evalResult = { score: 0, feedback: '', ai_involvement_score: 0.0 };
+
+    if (fileExt === 'pdf') {
+      evalResult = await evaluatePdfSubmission(assignment, filePath, fileName);
+    } else {
+      evalResult = await evaluateTextSubmission(assignment, filePath, fileName);
+    }
+
+    db.run(
+      "INSERT INTO evaluations (submission_id, score, feedback, ai_involvement_score) VALUES (?, ?, ?, ?)",
+      [submissionId, evalResult.score, evalResult.feedback, evalResult.ai_involvement_score],
+      (evalErr) => {
+        if (evalErr) {
+          console.error(`Failed to save evaluation for submission ${submissionId}:`, evalErr.message);
+          db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [submissionId]);
+        } else {
+          db.run("UPDATE submissions SET status = 'completed' WHERE id = ?", [submissionId]);
+        }
+      }
+    );
+  } catch (err) {
+    console.error(`Background LLM evaluation error for submission ${submissionId}:`, err.message);
+    db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [submissionId]);
+  }
+}
+
+// 제출물의 평가 진행 상태 및 결과 조회 API
+app.get('/api/submissions/:submissionId/status', isAuthenticated, (req, res) => {
+  const submissionId = req.params.submissionId;
+  const query = `
+    SELECT 
+      s.id as submission_id,
+      s.student_id,
+      s.file_name,
+      s.submitted_at,
+      s.submit_count,
+      COALESCE(s.status, 'completed') as status,
+      e.score,
+      e.feedback,
+      e.ai_involvement_score
+    FROM submissions s
+    LEFT JOIN evaluations e ON s.id = e.submission_id
+    WHERE s.id = ?
+  `;
+
+  db.get(query, [submissionId], (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    if (!row) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    if (req.session.user.role === 'student' && req.session.user.username !== row.student_id) {
+      return res.status(403).json({ error: 'Access denied.' });
+    }
+
+    res.json(row);
+  });
+});
+
 // 학생 본인의 특정 과제 제출 및 평가 결과 단건 조회 API
 app.get('/api/assignments/:assignmentId/my-submission', isAuthenticated, (req, res) => {
   const studentId = req.session.user.username;
@@ -977,6 +1124,8 @@ app.get('/api/assignments/:assignmentId/my-submission', isAuthenticated, (req, r
       s.id as submission_id,
       s.file_name,
       s.submitted_at,
+      s.submit_count,
+      COALESCE(s.status, 'completed') as status,
       e.score,
       e.feedback,
       e.ai_involvement_score

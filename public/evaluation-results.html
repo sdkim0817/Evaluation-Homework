@@ -137,14 +137,20 @@
 
         // UI 데이터 매핑
         document.getElementById('assignmentTitle').textContent = `[결과 확인] ${data.assignment_title}`;
-        // document.getElementById('assignmentDesc').textContent = data.assignment_description;
         document.getElementById('backToLectureBtn').href = `lecture.html?id=${data.course_id}`;
+        document.getElementById('subFileName').textContent = data.file_name;
+        document.getElementById('subTime').textContent = new Date(data.submitted_at).toLocaleString();
+
+        if (data.score === null || data.score === undefined) {
+          document.getElementById('evalFeedback').textContent = 'AI 자동 채점이 백그라운드에서 진행 중입니다. 잠시만 기다려 주세요...';
+          document.getElementById('evalScore').textContent = '채점 중...';
+          setTimeout(loadEvaluationResult, 2000);
+          return;
+        }
 
         const maxScore = getMaxRubricScore(data.assignment_rubric);
         document.getElementById('evalScore').textContent = `${data.score} / ${maxScore} 점`;
         document.getElementById('evalFeedback').textContent = data.feedback || '피드백을 생성할 수 없습니다.';
-        document.getElementById('subFileName').textContent = data.file_name;
-        document.getElementById('subTime').textContent = new Date(data.submitted_at).toLocaleString();
       } catch (err) {
         console.error(err);
         document.getElementById('evalFeedback').textContent = '평가 결과를 표시하는 중 오류가 발생했습니다.';
