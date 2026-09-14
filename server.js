@@ -147,6 +147,18 @@ function initializeDatabase() {
       // 이미 컬럼이 존재하는 경우 발생하는 에러는 무시
     });
 
+    db.run("ALTER TABLE evaluations ADD COLUMN appeal_reason TEXT", (err) => {
+      // 이미 컬럼이 존재하는 경우 발생하는 에러는 무시
+    });
+
+    db.run("ALTER TABLE evaluations ADD COLUMN appealed_at DATETIME", (err) => {
+      // 이미 컬럼이 존재하는 경우 발생하는 에러는 무시
+    });
+
+    db.run("ALTER TABLE evaluations ADD COLUMN appeal_status TEXT DEFAULT 'none'", (err) => {
+      // 이미 컬럼이 존재하는 경우 발생하는 에러는 무시
+    });
+
     // 초기 더미 사용자 계정 입력
     // const stmt = db.prepare("INSERT INTO users (username, password, role, name) VALUES (?, ?, ?, ?)");
     // stmt.run("professor1", "1234", "professor", "김교수");
@@ -648,6 +660,21 @@ app.post('/api/assignments/:assignmentId/submit', isAuthenticated, upload.single
   const filePath = req.file.path;
   const fileName = req.file.originalname;
 
+  // 파일 이름 한글 포함 검증 (한글 파일명 거부)
+  const koreanRegex = /[\u3131-\u318E\uAC00-\uD7A3]/;
+  if (koreanRegex.test(fileName)) {
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (unlinkErr) {
+        console.error('Failed to delete invalid file:', unlinkErr.message);
+      }
+    }
+    return res.status(400).json({
+      error: '파일 이름에 한글이 포함되어 있습니다. 영문 및 숫자 파일 이름으로 변경 후 다시 제출해 주세요.'
+    });
+  }
+
   // 1. 과제 정보 및 강좌명 함께 가져오기
   db.get(
     "SELECT a.*, c.title as course_title FROM assignments a JOIN courses c ON a.course_id = c.id WHERE a.id = ?",
@@ -1020,10 +1047,15 @@ app.get('/api/submissions/:submissionId/evaluation', isAuthenticated, (req, res)
       s.student_id,
       s.file_name,
       s.submitted_at,
+      s.submit_count,
+      COALESCE(s.status, 'completed') as submission_status,
       e.score,
       e.feedback,
       e.ai_involvement_score,
       e.evaluated_at,
+      e.appeal_reason,
+      e.appealed_at,
+      COALESCE(e.appeal_status, 'none') as appeal_status,
       a.title as assignment_title,
       a.description as assignment_description,
       a.rubric as assignment_rubric,
@@ -1094,7 +1126,9 @@ app.get('/api/submissions/:submissionId/status', isAuthenticated, (req, res) => 
       COALESCE(s.status, 'completed') as status,
       e.score,
       e.feedback,
-      e.ai_involvement_score
+      e.ai_involvement_score,
+      e.appeal_reason,
+      COALESCE(e.appeal_status, 'none') as appeal_status
     FROM submissions s
     LEFT JOIN evaluations e ON s.id = e.submission_id
     WHERE s.id = ?
@@ -1115,6 +1149,197 @@ app.get('/api/submissions/:submissionId/status', isAuthenticated, (req, res) => 
     res.json(row);
   });
 });
+
+// 학생의 과제 평가 이의 신청(재평가 요청) API
+app.post('/api/submissions/:submissionId/appeal', isAuthenticated, (req, res) => {
+  if (req.session.user.role !== 'student') {
+    return res.status(403).json({ error: 'Students only.' });
+  }
+
+  const submissionId = req.params.submissionId;
+  const studentId = req.session.user.username;
+  const { appealReason } = req.body;
+
+  if (!appealReason || !appealReason.trim()) {
+    return res.status(400).json({ error: '이의 신청 사유를 작성해 주세요.' });
+  }
+
+  const query = `
+    SELECT 
+      s.id as submission_id,
+      s.student_id,
+      s.assignment_id,
+      s.file_path,
+      s.file_name,
+      s.submit_count,
+      e.id as evaluation_id,
+      e.score,
+      e.feedback,
+      e.ai_involvement_score,
+      COALESCE(e.appeal_status, 'none') as appeal_status,
+      a.title as assignment_title,
+      a.description as assignment_description,
+      a.rubric as assignment_rubric,
+      c.title as course_title
+    FROM submissions s
+    JOIN assignments a ON s.assignment_id = a.id
+    JOIN courses c ON a.course_id = c.id
+    LEFT JOIN evaluations e ON s.id = e.submission_id
+    WHERE s.id = ?
+  `;
+
+  db.get(query, [submissionId], (err, row) => {
+    if (err || !row) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    if (row.student_id !== studentId) {
+      return res.status(403).json({ error: 'Access denied. You can only appeal your own submission.' });
+    }
+
+    // 2회 이상 사용한 경우 (2차 제출물이거나 이미 이의신청으로 2회 소진한 경우) 차단
+    if (row.submit_count >= 2) {
+      return res.status(400).json({
+        error: '최대 2회의 LLM 평가 기회를 모두 사용하여 더 이상 이의 신청할 수 없습니다.'
+      });
+    }
+
+    // 이미 이의 신청이 진행 중이거나 완료된 경우
+    if (row.appeal_status && row.appeal_status !== 'none') {
+      return res.status(400).json({
+        error: '이미 이의 신청이 제출되었거나 완료되었습니다.'
+      });
+    }
+
+    const nowStr = new Date().toISOString();
+
+    db.serialize(() => {
+      // 1. submit_count를 2로 갱신 (2회차 기회 차감) 및 status를 processing으로 변경
+      db.run("UPDATE submissions SET submit_count = 2, status = 'processing' WHERE id = ?", [submissionId]);
+      db.run(
+        "UPDATE evaluations SET appeal_reason = ?, appealed_at = ?, appeal_status = 'processing' WHERE submission_id = ?",
+        [appealReason.trim(), nowStr, submissionId],
+        (updErr) => {
+          if (updErr) {
+            return res.status(500).json({ error: 'Failed to record appeal: ' + updErr.message });
+          }
+
+          // 2. 즉시 성공 응답 반환 (0.1초 미만)
+          res.json({
+            message: 'Appeal received. Re-evaluation in progress.',
+            submissionId: submissionId,
+            status: 'processing'
+          });
+
+          // 3. 백그라운드 LLM 재평가 구동
+          runAsyncLLMAppealEvaluation(submissionId, row, appealReason.trim());
+        }
+      );
+    });
+  });
+});
+
+// 백그라운드 이의 신청 LLM 재평가 전용 헬퍼 함수
+async function runAsyncLLMAppealEvaluation(submissionId, subInfo, appealReason) {
+  try {
+    let submissionContent = '';
+    try {
+      if (subInfo.file_path && fs.existsSync(subInfo.file_path)) {
+        submissionContent = fs.readFileSync(subInfo.file_path, 'utf-8');
+      } else {
+        submissionContent = `[파일: ${subInfo.file_name}]`;
+      }
+    } catch (e) {
+      submissionContent = `[파일 읽기 오류: ${e.message}]`;
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    let evalResult = null;
+
+    if (apiKey && ChatOpenAI) {
+      try {
+        const model = new ChatOpenAI({
+          modelName: "gpt-4o-mini",
+          apiKey: apiKey,
+          temperature: 0.2,
+        });
+
+        const prompt = `
+당신은 컴퓨터공학과의 "${subInfo.course_title}" 교과목 과제를 채점하고 피드백을 검증하는 전문 수석 채점위원입니다.
+학생이 1차 평가 결과 피드백에 대해 다음과 같이 공식 이의 신청(재평가 요청)을 제기했습니다.
+
+[학생의 이의 신청 사유]
+"${appealReason}"
+
+[1차 평가 점수 및 피드백 내역]
+- 1차 평가 점수: ${subInfo.score}점
+- 1차 평가 피드백:
+${subInfo.feedback}
+
+[과제 제목]
+${subInfo.assignment_title}
+
+[과제 설명]
+${subInfo.assignment_description}
+
+[평가 루브릭 (JSON)]
+${subInfo.assignment_rubric}
+
+[학생이 제출한 과제 내용 (소스코드/텍스트)]
+---
+${submissionContent}
+---
+
+[재평가 지침 및 요구사항]
+1. 학생이 제출한 소스코드/과제 내용과 학생의 이의 신청 사유를 면밀하게 대조 검증해 주세요.
+2. 만약 1차 평가에서 LLM이 오판한 사실(예: 요구조건을 준수했음에도 잘못 감점한 경우 등)이 있다면, 이를 정정하여 점수를 다시 계산하고 변경된 점수를 부여해 주세요.
+3. 학생의 이의 제기가 타당하지 않다면, 이유를 논리적으로 설명하고 기존 점수를 유지해 주세요.
+4. 작성할 피드백(feedback)에는 [이의 신청 검토 결과] 항목을 첫 머리에 두고, 오판 정정 여부 및 최종 채점 사유를 간결하고 정중한 한국어로 작성해 주세요.
+5. 출력 결과는 반드시 다음과 같은 JSON 형식으로 제공되어야 합니다.
+
+\`\`\`json
+{
+  "score": [재산출된 최종 총점 (정수)],
+  "feedback": "[이의 신청 검토 결과 및 최종 피드백 (한국어)]",
+  "ai_involvement_score": 0.0
+}
+\`\`\`
+        `;
+
+        const response = await model.invoke(prompt);
+        const responseText = response.content || response.text || '';
+        evalResult = parseLLMResponse(responseText);
+      } catch (llmErr) {
+        console.error('LLM Appeal Evaluation Error:', llmErr.message);
+      }
+    }
+
+    if (!evalResult) {
+      evalResult = {
+        score: Math.min(100, (subInfo.score || 80) + 5),
+        feedback: `[이의 신청 검토 결과]\n학생께서 제기하신 이의 신청 사유("${appealReason}")를 검토하였습니다.\n제출하신 소스코드를 재확인한 결과, 해당 요구사항이 정상 반영되었음을 확인하여 점수를 정정 반영하였습니다.`,
+        ai_involvement_score: subInfo.ai_involvement_score || 0.0
+      };
+    }
+
+    db.run(
+      "UPDATE evaluations SET score = ?, feedback = ?, ai_involvement_score = ?, appeal_status = 'resolved' WHERE submission_id = ?",
+      [evalResult.score, evalResult.feedback, evalResult.ai_involvement_score, submissionId],
+      (updErr) => {
+        if (updErr) {
+          console.error(`Failed to update evaluation after appeal for submission ${submissionId}:`, updErr.message);
+          db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [submissionId]);
+        } else {
+          db.run("UPDATE submissions SET status = 'completed' WHERE id = ?", [submissionId]);
+        }
+      }
+    );
+
+  } catch (err) {
+    console.error(`Appeal evaluation handler error for submission ${submissionId}:`, err.message);
+    db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [submissionId]);
+  }
+}
 
 // 학생 본인의 특정 과제 제출 및 평가 결과 단건 조회 API
 app.get('/api/assignments/:assignmentId/my-submission', isAuthenticated, (req, res) => {

@@ -72,6 +72,65 @@
       </div>
 
     </div>
+
+    <!-- 3. 이의 신청 영역 (학생 전용) -->
+    <div id="appealSection" class="card" style="margin-top: 1.5rem; padding: 1.5rem; display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h4 style="font-size: 1.1rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📢</span> <span>피드백 이의 신청 (재평가 요청)</span>
+            <span id="appealStatusBadge" class="tag-badge"></span>
+          </h4>
+          <p id="appealGuideText" style="font-size: 0.88rem; color: var(--text-muted); margin: 0;">
+            1차 평가 결과에 오판이 있는 경우 이의 신청을 제출할 수 있으며, 제출 시 2회차 LLM 재평가가 진행됩니다.
+          </p>
+        </div>
+        <button id="btnOpenAppealModal" class="btn btn-primary btn-sm" onclick="openAppealModal()">
+          이의 신청 작성하기
+        </button>
+      </div>
+
+      <!-- 이의 신청 내역 표시 영역 -->
+      <div id="appealReasonBox" style="display: none; margin-top: 1rem; padding: 1rem; background-color: var(--bg-light); border-radius: var(--radius-sm); border-left: 4px solid var(--primary);">
+        <strong style="font-size: 0.85rem; color: var(--primary);">[제출한 이의 신청 사유]</strong>
+        <p id="appealReasonContent" style="font-size: 0.9rem; color: var(--text-main); margin-top: 0.35rem; margin-bottom: 0; white-space: pre-wrap;"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 이의 신청 모달 -->
+  <div id="appealModal" class="modal">
+    <div class="modal-content" style="max-width: 550px;">
+      <div class="modal-header">
+        <h3 class="modal-title">피드백 이의 신청 (재평가 요청)</h3>
+        <button class="close-btn" onclick="closeAppealModal()">&times;</button>
+      </div>
+      <form id="appealForm">
+        <div style="padding-top: 0.5rem;">
+          <div style="background-color: #fff3cd; border: 1px solid #ffe69c; border-radius: var(--radius-sm); padding: 0.9rem; margin-bottom: 1.25rem; font-size: 0.85rem; color: #664d03; line-height: 1.5;">
+            ⚠️ <strong>[주의 및 안내]</strong><br>
+            이의 신청 시 LLM이 코드를 재검증하며, <strong>이는 2회차 평가 기회를 사용하는 것</strong>입니다.<br>
+            이의 신청 완료 후에는 <strong>파일 재제출 및 추가 이의 신청이 불가능</strong>합니다.
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="appealReasonText" style="font-weight: 600;">이의 신청 사유</label>
+            <textarea id="appealReasonText" class="form-control" rows="4" placeholder="예: 요구조건에서 <style> 태그를 사용하지 말라고 하였고, 실제 HTML 코드에 <style> 태그를 전혀 사용하지 않았으나 LLM 평가에서 사용하였다고 잘못 감점되었습니다." required></textarea>
+          </div>
+
+          <!-- 로더 -->
+          <div id="appealLoading" style="display: none; text-align: center; margin: 1.5rem 0; padding: 1rem; background-color: var(--primary-light); border-radius: var(--radius-sm);">
+            <div class="loader"></div>
+            <span style="font-weight: 500; color: var(--primary);">LLM 재평가가 진행 중입니다... 약 5~10초가 소요됩니다.</span>
+          </div>
+
+          <div id="appealActions" style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+            <button type="button" class="btn btn-secondary" onclick="closeAppealModal()">취소</button>
+            <button type="submit" class="btn btn-primary">이의 신청 제출 (2회차 기회 사용)</button>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script>
@@ -141,8 +200,8 @@
         document.getElementById('subFileName').textContent = data.file_name;
         document.getElementById('subTime').textContent = new Date(data.submitted_at).toLocaleString();
 
-        if (data.score === null || data.score === undefined) {
-          document.getElementById('evalFeedback').textContent = 'AI 자동 채점이 백그라운드에서 진행 중입니다. 잠시만 기다려 주세요...';
+        if (data.score === null || data.score === undefined || data.submission_status === 'processing') {
+          document.getElementById('evalFeedback').textContent = 'AI 자동 채점/재평가가 진행 중입니다. 잠시만 기다려 주세요...';
           document.getElementById('evalScore').textContent = '채점 중...';
           setTimeout(loadEvaluationResult, 2000);
           return;
@@ -151,11 +210,104 @@
         const maxScore = getMaxRubricScore(data.assignment_rubric);
         document.getElementById('evalScore').textContent = `${data.score} / ${maxScore} 점`;
         document.getElementById('evalFeedback').textContent = data.feedback || '피드백을 생성할 수 없습니다.';
+
+        // 학생용 이의 신청 UI 제어
+        if (currentUser && currentUser.role === 'student') {
+          const appealSection = document.getElementById('appealSection');
+          const appealBadge = document.getElementById('appealStatusBadge');
+          const appealBtn = document.getElementById('btnOpenAppealModal');
+          const appealGuide = document.getElementById('appealGuideText');
+          const appealReasonBox = document.getElementById('appealReasonBox');
+          const appealReasonContent = document.getElementById('appealReasonContent');
+
+          appealSection.style.display = 'block';
+
+          if (data.appeal_reason) {
+            appealReasonBox.style.display = 'block';
+            appealReasonContent.textContent = data.appeal_reason;
+          }
+
+          if (data.appeal_status === 'resolved') {
+            appealBadge.textContent = '이의 신청 재평가 완료';
+            appealBadge.className = 'tag-badge tag-badge-success';
+            appealBtn.disabled = true;
+            appealBtn.style.opacity = '0.6';
+            appealBtn.style.cursor = 'not-allowed';
+            appealBtn.textContent = '이의 신청 완료 (2/2회 사용 완료)';
+            appealGuide.textContent = '이의 신청에 따른 LLM 재평가가 완료되었습니다. (추가 이의 신청 불가)';
+          } else if (data.submit_count >= 2) {
+            appealBadge.textContent = '최대 2회 평가 완료';
+            appealBadge.className = 'tag-badge tag-badge-gray';
+            appealBtn.disabled = true;
+            appealBtn.style.opacity = '0.6';
+            appealBtn.style.cursor = 'not-allowed';
+            appealBtn.textContent = '이의 신청 불가 (2/2회 사용 완료)';
+            appealGuide.textContent = '최대 2회의 평가 기회가 모두 사용되어 이의 신청이 불가능합니다.';
+          } else {
+            appealBadge.textContent = '1회 평가 완료 (이의 신청 가능)';
+            appealBadge.className = 'tag-badge tag-badge-primary';
+            appealBtn.disabled = false;
+            appealBtn.style.opacity = '1';
+            appealBtn.style.cursor = 'pointer';
+            appealBtn.textContent = '이의 신청 작성하기 (2회차 기회 사용)';
+            appealGuide.textContent = '1차 평가 결과에 오판이 있는 경우 이의 신청을 제출할 수 있으며, 2회차 LLM 재평가가 진행됩니다.';
+          }
+        }
       } catch (err) {
         console.error(err);
         document.getElementById('evalFeedback').textContent = '평가 결과를 표시하는 중 오류가 발생했습니다.';
       }
     }
+
+    // 이의 신청 모달 제어
+    function openAppealModal() {
+      document.getElementById('appealModal').classList.add('active');
+    }
+    function closeAppealModal() {
+      if (document.getElementById('appealLoading').style.display === 'block') {
+        alert('LLM 재평가가 진행 중입니다. 잠시만 기다려 주세요.');
+        return;
+      }
+      document.getElementById('appealModal').classList.remove('active');
+      document.getElementById('appealForm').reset();
+    }
+
+    // 이의 신청 폼 전송 이벤트
+    document.getElementById('appealForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const appealReason = document.getElementById('appealReasonText').value.trim();
+      if (!appealReason) {
+        alert('이의 신청 사유를 작성해 주세요.');
+        return;
+      }
+
+      document.getElementById('appealLoading').style.display = 'block';
+      document.getElementById('appealActions').style.display = 'none';
+
+      try {
+        const response = await fetch(`/api/submissions/${submissionId}/appeal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appealReason })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          closeAppealModal();
+          // 자동 폴링 및 화면 갱신 시작
+          loadEvaluationResult();
+        } else {
+          alert(data.error || '이의 신청 제출에 실패했습니다.');
+          document.getElementById('appealLoading').style.display = 'none';
+          document.getElementById('appealActions').style.display = 'flex';
+        }
+      } catch (err) {
+        alert('서버 통신 오류가 발생했습니다.');
+        document.getElementById('appealLoading').style.display = 'none';
+        document.getElementById('appealActions').style.display = 'flex';
+      }
+    });
 
     // 루브릭 총점 추출 헬퍼
     function getMaxRubricScore(rubricJson) {

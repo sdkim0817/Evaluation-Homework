@@ -645,6 +645,13 @@
 
       const file = fileInput.files[0];
 
+      // 파일 이름 한글 포함 검증 (한글 파일명 거부)
+      const koreanRegex = /[\u3131-\u318E\uAC00-\uD7A3]/;
+      if (koreanRegex.test(file.name)) {
+        alert('파일 이름에 한글이 포함되어 있습니다. 파일 이름을 영문 및 숫자로 변경한 후 다시 제출해 주세요.');
+        return;
+      }
+
       // 프론트엔드 확장자 검증
       if (allowedExt && allowedExt.trim() !== '') {
         const allowedList = allowedExt.split(',').map(ext => ext.trim().toLowerCase()).filter(ext => ext !== '');
