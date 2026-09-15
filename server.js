@@ -540,6 +540,67 @@ app.get('/api/courses/:courseId/overview', isAuthenticated, isProfessor, (req, r
   });
 });
 
+// 특정 강좌에 등록된 학생(수강생) 정보 목록 조회 API (교수 전용, 비밀번호 확인 포함)
+app.get('/api/courses/:courseId/students', isAuthenticated, isProfessor, (req, res) => {
+  const courseId = req.params.courseId;
+
+  db.get("SELECT * FROM courses WHERE id = ?", [courseId], (courseErr, course) => {
+    if (courseErr) {
+      return res.status(500).json({ error: 'Database error while fetching course: ' + courseErr.message });
+    }
+    if (!course) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    db.get("SELECT COUNT(*) as total_assignments FROM assignments WHERE course_id = ?", [courseId], (assErr, assRow) => {
+      if (assErr) {
+        return res.status(500).json({ error: 'Database error while counting assignments: ' + assErr.message });
+      }
+      const totalAssignments = assRow ? assRow.total_assignments : 0;
+
+      const studentsQuery = `
+        SELECT 
+          u.username,
+          u.name,
+          u.password,
+          COUNT(DISTINCT s.assignment_id) as submitted_count,
+          AVG(e.score) as avg_score
+        FROM users u
+        JOIN student_courses sc ON u.username = sc.student_id
+        LEFT JOIN assignments a ON a.course_id = sc.course_id
+        LEFT JOIN submissions s ON s.assignment_id = a.id AND s.student_id = u.username
+        LEFT JOIN evaluations e ON e.submission_id = s.id
+        WHERE u.role = 'student' AND sc.course_id = ?
+        GROUP BY u.username, u.name, u.password
+        ORDER BY u.name ASC, u.username ASC
+      `;
+
+      db.all(studentsQuery, [courseId], (stuErr, rows) => {
+        if (stuErr) {
+          return res.status(500).json({ error: 'Database error while fetching enrolled students: ' + stuErr.message });
+        }
+
+        const studentList = rows.map(r => ({
+          username: r.username,
+          name: r.name,
+          password: r.password,
+          submitted_count: r.submitted_count || 0,
+          total_assignments: totalAssignments,
+          average_score: (r.avg_score !== null && r.avg_score !== undefined) ? Math.round(r.avg_score * 10) / 10 : null
+        }));
+
+        res.json({
+          course_id: parseInt(courseId),
+          course_title: course.title,
+          total_students: studentList.length,
+          total_assignments: totalAssignments,
+          students: studentList
+        });
+      });
+    });
+  });
+});
+
 // 과제 생성 API (교수 전용)
 app.post('/api/courses/:courseId/assignments', isAuthenticated, isProfessor, (req, res) => {
   const { title, description, rubric, due_date, allowed_extensions } = req.body;
@@ -830,9 +891,9 @@ async function evaluateTextSubmission(assignment, filePath, fileName) {
   if (apiKey && ChatOpenAI) {
     try {
       const model = new ChatOpenAI({
-        modelName: "gpt-4o-mini",
+        modelName: "gpt-5.6-luna",
         apiKey: apiKey,
-        temperature: 0.2,
+        temperature: 0.0,
       });
 
       const prompt = `
@@ -1009,6 +1070,155 @@ app.post('/api/assignments/:assignmentId/delete-files', isAuthenticated, isProfe
     });
   });
 });
+
+// 교수가 특정 학생의 제출물 개별 재평가 실행 API (교수 전용)
+app.post('/api/submissions/:submissionId/re-evaluate', isAuthenticated, isProfessor, (req, res) => {
+  const submissionId = req.params.submissionId;
+
+  const query = `
+    SELECT 
+      s.id as submission_id,
+      s.assignment_id,
+      s.student_id,
+      s.file_path,
+      s.file_name,
+      a.title as assignment_title,
+      a.description as assignment_description,
+      a.rubric as assignment_rubric,
+      a.allowed_extensions,
+      c.title as course_title
+    FROM submissions s
+    JOIN assignments a ON s.assignment_id = a.id
+    JOIN courses c ON a.course_id = c.id
+    WHERE s.id = ?
+  `;
+
+  db.get(query, [submissionId], (err, subInfo) => {
+    if (err || !subInfo) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    db.run("UPDATE submissions SET status = 'processing' WHERE id = ?", [submissionId], (updErr) => {
+      if (updErr) {
+        return res.status(500).json({ error: 'Failed to update submission status: ' + updErr.message });
+      }
+
+      res.json({
+        message: 'Re-evaluation started.',
+        submissionId: submissionId,
+        status: 'processing'
+      });
+
+      runAsyncLLMReEvaluation(submissionId, subInfo);
+    });
+  });
+});
+
+// 교수가 선택한 복수 학생 제출물 일괄 재평가 실행 API (교수 전용)
+app.post('/api/assignments/:assignmentId/batch-re-evaluate', isAuthenticated, isProfessor, (req, res) => {
+  const { submissionIds } = req.body;
+  if (!Array.isArray(submissionIds) || submissionIds.length === 0) {
+    return res.status(400).json({ error: 'submissionIds must be a non-empty array.' });
+  }
+
+  const placeholders = submissionIds.map(() => '?').join(',');
+  const updateQuery = `UPDATE submissions SET status = 'processing' WHERE id IN (${placeholders})`;
+
+  db.run(updateQuery, submissionIds, function (updErr) {
+    if (updErr) {
+      return res.status(500).json({ error: 'Failed to update submissions status: ' + updErr.message });
+    }
+
+    res.json({
+      message: 'Batch re-evaluation started.',
+      count: submissionIds.length,
+      submissionIds: submissionIds
+    });
+
+    runBatchAsyncLLMReEvaluation(submissionIds);
+  });
+});
+
+// 교수 재평가 백그라운드 비동기 헬퍼 함수
+async function runAsyncLLMReEvaluation(submissionId, subInfo) {
+  try {
+    const fileExt = path.extname(subInfo.file_name).toLowerCase().replace('.', '');
+    let evalResult = { score: 0, feedback: '', ai_involvement_score: 0.0 };
+
+    if (fileExt === 'pdf') {
+      evalResult = await evaluatePdfSubmission(subInfo, subInfo.file_path, subInfo.file_name);
+    } else {
+      evalResult = await evaluateTextSubmission(subInfo, subInfo.file_path, subInfo.file_name);
+    }
+
+    db.get("SELECT id FROM evaluations WHERE submission_id = ?", [submissionId], (findErr, existingEval) => {
+      if (existingEval) {
+        db.run(
+          "UPDATE evaluations SET score = ?, feedback = ?, ai_involvement_score = ?, evaluated_at = CURRENT_TIMESTAMP WHERE submission_id = ?",
+          [evalResult.score, evalResult.feedback, evalResult.ai_involvement_score, submissionId],
+          (evalErr) => {
+            if (evalErr) {
+              console.error(`Failed to update re-evaluation for submission ${submissionId}:`, evalErr.message);
+              db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [submissionId]);
+            } else {
+              db.run("UPDATE submissions SET status = 'completed' WHERE id = ?", [submissionId]);
+            }
+          }
+        );
+      } else {
+        db.run(
+          "INSERT INTO evaluations (submission_id, score, feedback, ai_involvement_score) VALUES (?, ?, ?, ?)",
+          [submissionId, evalResult.score, evalResult.feedback, evalResult.ai_involvement_score],
+          (evalErr) => {
+            if (evalErr) {
+              console.error(`Failed to insert re-evaluation for submission ${submissionId}:`, evalErr.message);
+              db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [submissionId]);
+            } else {
+              db.run("UPDATE submissions SET status = 'completed' WHERE id = ?", [submissionId]);
+            }
+          }
+        );
+      }
+    });
+
+  } catch (err) {
+    console.error(`Re-evaluation error for submission ${submissionId}:`, err.message);
+    db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [submissionId]);
+  }
+}
+
+async function runBatchAsyncLLMReEvaluation(submissionIds) {
+  for (const sId of submissionIds) {
+    const query = `
+      SELECT 
+        s.id as submission_id,
+        s.assignment_id,
+        s.student_id,
+        s.file_path,
+        s.file_name,
+        a.title as assignment_title,
+        a.description as assignment_description,
+        a.rubric as assignment_rubric,
+        a.allowed_extensions,
+        c.title as course_title
+      FROM submissions s
+      JOIN assignments a ON s.assignment_id = a.id
+      JOIN courses c ON a.course_id = c.id
+      WHERE s.id = ?
+    `;
+
+    await new Promise((resolve) => {
+      db.get(query, [sId], async (err, subInfo) => {
+        if (!err && subInfo) {
+          await runAsyncLLMReEvaluation(sId, subInfo);
+        } else {
+          db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [sId]);
+        }
+        resolve();
+      });
+    });
+  }
+}
 
 // 교수가 특정 과제에 대해 제출된 모든 학생 결과 조회 API (교수 전용)
 app.get('/api/assignments/:assignmentId/submissions', isAuthenticated, isProfessor, (req, res) => {
@@ -1259,9 +1469,9 @@ async function runAsyncLLMAppealEvaluation(submissionId, subInfo, appealReason) 
     if (apiKey && ChatOpenAI) {
       try {
         const model = new ChatOpenAI({
-          modelName: "gpt-4o-mini",
+          modelName: "gpt-5.6-luna",
           apiKey: apiKey,
-          temperature: 0.2,
+          temperature: 0.0,
         });
 
         const prompt = `

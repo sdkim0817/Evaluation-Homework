@@ -61,12 +61,20 @@
     <div
       style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
       <h2 style="font-family: var(--font-heading); font-size: 1.25rem; font-weight: 600; margin: 0;">제출 및 평가 목록</h2>
-      <button id="btnDeleteAllFiles" class="btn btn-danger btn-sm" onclick="deleteAllFiles()">제출 파일 일괄 삭제</button>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button id="btnBatchReEvaluate" class="btn btn-primary btn-sm" style="display: none;" onclick="reEvaluateBatch()">
+          🔄 선택 과제 일괄 재평가 (<span id="selectedCount">0</span>개)
+        </button>
+        <button id="btnDeleteAllFiles" class="btn btn-danger btn-sm" onclick="deleteAllFiles()">제출 파일 일괄 삭제</button>
+      </div>
     </div>
     <div class="table-responsive">
       <table>
         <thead>
           <tr>
+            <th style="width: 40px; text-align: center;">
+              <input type="checkbox" id="selectAllCheckboxes" onchange="toggleSelectAll(this)">
+            </th>
             <th>학번</th>
             <th>이름</th>
             <th>제출 파일</th>
@@ -74,6 +82,7 @@
             <th>획득 점수</th>
             <th>AI 관여도 추정</th>
             <th>피드백</th>
+            <th style="width: 130px; text-align: center;">작업</th>
           </tr>
         </thead>
         <tbody id="submissionTableBody">
@@ -174,10 +183,14 @@
       }
     }
 
+    let isPollingReEval = false;
+
     // 제출 현황 로드
     async function loadSubmissions() {
       const tbody = document.getElementById('submissionTableBody');
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-light);">로딩 중...</td></tr>';
+      if (!isPollingReEval) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-light);">로딩 중...</td></tr>';
+      }
 
       try {
         const response = await fetch(`/api/assignments/${assignmentId}/submissions`);
@@ -185,7 +198,7 @@
         const submissions = await response.json();
 
         if (submissions.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-light); padding: 2rem 0;">제출된 과제가 없습니다.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-light); padding: 2rem 0;">제출된 과제가 없습니다.</td></tr>';
           return;
         }
 
@@ -193,6 +206,7 @@
         let totalScore = 0;
         let evaluatedCount = 0;
         let maxScore = 0;
+        let hasProcessing = false;
 
         submissions.forEach(sub => {
           const tr = document.createElement('tr');
@@ -201,7 +215,10 @@
           let aiScoreText = '-';
           let feedbackBtn = '-';
 
-          if (sub.score !== null && sub.score !== undefined) {
+          if (sub.status === 'processing') {
+            hasProcessing = true;
+            scoreText = '<span style="color: var(--primary); font-size: 0.88rem;">🔄 채점 중...</span>';
+          } else if (sub.score !== null && sub.score !== undefined) {
             scoreText = `${sub.score} 점`;
             totalScore += sub.score;
             evaluatedCount++;
@@ -236,7 +253,19 @@
             }
           }
 
+          let actionBtnHtml = '-';
+          if (sub.status === 'processing') {
+            actionBtnHtml = `<span style="color: var(--primary); font-size: 0.82rem; font-weight: 500;">🔄 재평가 중...</span>`;
+          } else if (sub.file_path) {
+            actionBtnHtml = `<button class="btn btn-primary btn-sm" onclick="reEvaluateSingle(${sub.submission_id})">🔄 재평가</button>`;
+          } else {
+            actionBtnHtml = `<button class="btn btn-secondary btn-sm" disabled style="opacity: 0.5;">파일 없음</button>`;
+          }
+
           tr.innerHTML = `
+            <td style="text-align: center;">
+              <input type="checkbox" class="sub-checkbox" value="${sub.submission_id}" ${sub.file_path ? '' : 'disabled'} onchange="updateBatchButtonState()">
+            </td>
             <td>${escapeHtml(sub.student_id)}</td>
             <td>${escapeHtml(sub.student_name)}</td>
             <td>${fileColumnHtml}</td>
@@ -244,6 +273,7 @@
             <td style="font-weight: 600; color: var(--primary);">${scoreText}</td>
             <td style="font-weight: 500; color: var(--info, #0288d1);">${aiScoreText}</td>
             <td>${feedbackBtn}</td>
+            <td style="text-align: center;">${actionBtnHtml}</td>
           `;
           tbody.appendChild(tr);
         });
@@ -259,9 +289,84 @@
           document.getElementById('statsHighScore').textContent = '-';
         }
 
+        updateBatchButtonState();
+
+        // 만약 재평가 중인 과제가 남아있다면 2초 후 폴링
+        if (hasProcessing) {
+          isPollingReEval = true;
+          setTimeout(loadSubmissions, 2000);
+        } else {
+          isPollingReEval = false;
+        }
+
       } catch (err) {
         console.error(err);
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--danger);">제출 목록을 로드하지 못했습니다.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--danger);">제출 목록을 로드하지 못했습니다.</td></tr>';
+      }
+    }
+
+    // 체크박스 제어 및 일괄 버튼 상태 업데이트
+    function toggleSelectAll(master) {
+      const checkboxes = document.querySelectorAll('.sub-checkbox:not([disabled])');
+      checkboxes.forEach(cb => cb.checked = master.checked);
+      updateBatchButtonState();
+    }
+
+    function updateBatchButtonState() {
+      const checkedBoxes = document.querySelectorAll('.sub-checkbox:checked');
+      const batchBtn = document.getElementById('btnBatchReEvaluate');
+      const countSpan = document.getElementById('selectedCount');
+
+      countSpan.textContent = checkedBoxes.length;
+      if (checkedBoxes.length > 0) {
+        batchBtn.style.display = 'inline-flex';
+      } else {
+        batchBtn.style.display = 'none';
+      }
+    }
+
+    // 개별 제출물 재평가 실행
+    async function reEvaluateSingle(submissionId) {
+      if (!confirm('이 학생의 과제 제출물에 대해 LLM 재평가를 실행하시겠습니까?')) return;
+
+      try {
+        const res = await fetch(`/api/submissions/${submissionId}/re-evaluate`, { method: 'POST' });
+        if (res.ok) {
+          loadSubmissions();
+        } else {
+          const data = await res.json();
+          alert(data.error || '재평가 실행에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신 오류가 발생했습니다.');
+      }
+    }
+
+    // 선택된 제출물 일괄 재평가 실행
+    async function reEvaluateBatch() {
+      const checkedBoxes = document.querySelectorAll('.sub-checkbox:checked');
+      const submissionIds = Array.from(checkedBoxes).map(cb => Number(cb.value));
+
+      if (submissionIds.length === 0) return;
+      if (!confirm(`선택한 ${submissionIds.length}개의 과제 제출물에 대해 일괄 LLM 재평가를 실행하시겠습니까?`)) return;
+
+      try {
+        const res = await fetch(`/api/assignments/${assignmentId}/batch-re-evaluate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ submissionIds })
+        });
+
+        if (res.ok) {
+          // 체크 해제 및 새로고침
+          document.getElementById('selectAllCheckboxes').checked = false;
+          loadSubmissions();
+        } else {
+          const data = await res.json();
+          alert(data.error || '일괄 재평가 실행에 실패했습니다.');
+        }
+      } catch (err) {
+        alert('서버 통신 오류가 발생했습니다.');
       }
     }
 
