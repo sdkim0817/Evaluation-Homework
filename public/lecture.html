@@ -65,7 +65,7 @@
             업로드하여 자동 입력</label>
           <input type="file" id="assMdFile" class="form-control" accept=".md,.txt" onchange="handleMdFileUpload(event)">
           <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem; margin-bottom: 0;">
-            마크다운 과제 파일 선택 시 제목, 설명, 마감일, 제출 파일 형식, 루브릭 항목이 자동으로 추출되어 채워집니다.
+            마크다운 과제 파일 선택 시 제목, 요구 사항, 마감일, 제출 허용 파일 형식, 루브릭 항목이 자동으로 추출되어 채워집니다.
           </p>
         </div>
 
@@ -74,8 +74,8 @@
           <input type="text" id="assTitle" class="form-control" placeholder="예: [과제1] 변수와 조건문 실습" required>
         </div>
         <div class="form-group">
-          <label class="form-label" for="assDesc">과제 설명</label>
-          <textarea id="assDesc" class="form-control" rows="4" placeholder="과제의 요구사항 및 안내를 입력해 주세요."
+          <label class="form-label" for="assDesc">요구 사항</label>
+          <textarea id="assDesc" class="form-control" rows="4" placeholder="과제의 요구사항을 입력해 주세요."
             required></textarea>
         </div>
         <div class="form-group">
@@ -334,14 +334,44 @@
       addRubricRow();
     }
 
+    // 마크다운 파일 5개 필수 헤더 검증 함수
+    function validateMdTemplate(text) {
+      const requiredHeaders = [
+        { key: 'title', label: '## 제목', regex: /##[ \t]*제목/i },
+        { key: 'requirements', label: '#### 요구 사항', regex: /####[ \t]*(?:요구\s*사항|요구사항)/i },
+        { key: 'dueDate', label: '#### 마감일', regex: /####[ \t]*마감일/i },
+        { key: 'allowedExt', label: '#### 제출 허용 파일 형식', regex: /####[ \t]*제출[ \t]*허용[ \t]*파일[ \t]*형식/i },
+        { key: 'rubric', label: '#### 평가 기준', regex: /####[ \t]*평가[ \t]*기준/i }
+      ];
+
+      const missing = [];
+      requiredHeaders.forEach(item => {
+        if (!item.regex.test(text)) {
+          missing.push(item.label);
+        }
+      });
+
+      return missing;
+    }
+
     // 마크다운 양식 파일(.md) 업로드 핸들러
     function handleMdFileUpload(event) {
-      const file = event.target.files[0];
+      const fileInput = event.target;
+      const file = fileInput.files[0];
       if (!file) return;
 
       const reader = new FileReader();
       reader.onload = function (e) {
-        const text = e.target.result;
+        let text = e.target.result || '';
+        text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+
+        const missingHeaders = validateMdTemplate(text);
+        if (missingHeaders.length > 0) {
+          alert(`[마크다운 양식 오류]\n\n업로드하신 파일에 아래 필수 헤더가 누락되었습니다:\n- ${missingHeaders.join('\n- ')}\n\n지정된 5개 필수 헤더 양식을 확인 후 다시 업로드해 주세요.`);
+          fileInput.value = '';
+          return;
+        }
+
         parseAndFillAssignmentMd(text);
       };
       reader.readAsText(file);
@@ -351,29 +381,20 @@
     function parseAndFillAssignmentMd(text) {
       if (!text) return;
 
-      // 1. 제목 파싱 (## 제목 ...)
-      const titleMatch = text.match(/##\s*제목\s*\n+([\s\S]*?)(?=\n+#{1,4}\s+|$)/i);
+      // 1. ## 제목 파싱
+      const titleMatch = text.match(/##[ \t]*제목[ \t]*\n+([^\n]+)/i);
       if (titleMatch && titleMatch[1]) {
         document.getElementById('assTitle').value = titleMatch[1].trim();
       }
 
-      // 2. 과제 설명 파싱 (#### 과제 설명 ... 마감일 전까지 모든 내용, 요구사항 포함)
-      let descriptionText = '';
-      const descMatch = text.match(/####\s*과제\s*설명\s*\n+([\s\S]*?)(?=\n+####\s*마감일|$)/i);
-      if (descMatch && descMatch[1]) {
-        descriptionText = descMatch[1].trim();
-      } else {
-        const fallbackDesc = text.match(/##\s*제목\s*\n+.*?\n+([\s\S]*?)(?=\n+####\s*마감일|$)/i);
-        if (fallbackDesc && fallbackDesc[1]) {
-          descriptionText = fallbackDesc[1].trim();
-        }
-      }
-      if (descriptionText) {
-        document.getElementById('assDesc').value = descriptionText;
+      // 2. #### 요구 사항 파싱
+      const reqMatch = text.match(/####[ \t]*(?:요구\s*사항|요구사항)[ \t]*\n+([\s\S]*?)(?=\n[ \t]*####|$)/i);
+      if (reqMatch && reqMatch[1]) {
+        document.getElementById('assDesc').value = reqMatch[1].trim();
       }
 
-      // 3. 마감일 파싱 (#### 마감일: YYYY/MM/DD 또는 YYYY-MM-DD 등)
-      const dateMatch = text.match(/####\s*마감일\s*[:\s]*([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}(?:\s+[0-9]{1,2}:[0-9]{1,2})?)/i);
+      // 3. #### 마감일 파싱
+      const dateMatch = text.match(/####[ \t]*마감일[ \t]*[:\s]*([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}(?:\s+[0-9]{1,2}:[0-9]{1,2})?)/i);
       if (dateMatch && dateMatch[1]) {
         const parts = dateMatch[1].trim().replace(/\//g, '-').split(/\s+/);
         const dateParts = parts[0].split('-');
@@ -388,15 +409,14 @@
         document.getElementById('assDueDate').value = `${yyyy}-${mm}-${dd}T${timeStr}`;
       }
 
-      // 4. 제출 허용 파일 형식 파싱 (#### 제출 허용 파일 형식 ...)
-      const extMatch = text.match(/####\s*제출\s*허용\s*파일\s*형식\s*\n+([\s\S]*?)(?=\n+####\s*|$)/i);
+      // 4. #### 제출 허용 파일 형식 파싱
+      const extMatch = text.match(/####[ \t]*제출[ \t]*허용[ \t]*파일[ \t]*형식[ \t]*\n+([^\n]+)/i);
       if (extMatch && extMatch[1]) {
-        const extList = extMatch[1].trim().split('\n')[0].trim();
-        document.getElementById('assAllowedExt').value = extList;
+        document.getElementById('assAllowedExt').value = extMatch[1].trim();
       }
 
-      // 5. 평가 기준 (루브릭) 표 파싱 (#### 평가 기준 ...)
-      const rubricMatch = text.match(/####\s*평가\s*기준\s*\n+([\s\S]*?)(?=\n+#{1,4}\s+|$)/i);
+      // 5. #### 평가 기준 파싱 (루브릭 테이블)
+      const rubricMatch = text.match(/####[ \t]*평가[ \t]*기준[ \t]*\n+([\s\S]*?)(?=\n#{1,4}[ \t]+|$)/i);
       const rubricSection = rubricMatch ? rubricMatch[1] : text;
 
       const lines = rubricSection.split('\n');

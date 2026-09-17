@@ -8,11 +8,24 @@ require('dotenv').config();
 delete process.env.GOOGLE_API_KEY;
 
 // LangChain & OpenAI 임포트 (오류 방지를 위해 dynamic require 처리 또는 try-catch 감싸기)
-let ChatOpenAI;
+let ChatOpenAI, HumanMessage;
 try {
   ChatOpenAI = require('@langchain/openai').ChatOpenAI;
+  HumanMessage = require('@langchain/core/messages').HumanMessage;
 } catch (e) {
   console.warn('Warning: @langchain/openai module not loaded. Mock LLM will be used.');
+}
+
+let pdfParse, pdfToPng;
+try {
+  pdfParse = require('pdf-parse');
+} catch (e) {
+  console.warn('Warning: pdf-parse module not loaded.');
+}
+try {
+  pdfToPng = require('pdf-to-png-converter').pdfToPng;
+} catch (e) {
+  console.warn('Warning: pdf-to-png-converter module not loaded.');
 }
 
 const app = express();
@@ -603,11 +616,12 @@ app.get('/api/courses/:courseId/students', isAuthenticated, isProfessor, (req, r
 
 // 과제 생성 API (교수 전용)
 app.post('/api/courses/:courseId/assignments', isAuthenticated, isProfessor, (req, res) => {
-  const { title, description, rubric, due_date, allowed_extensions } = req.body;
+  const { title, description, requirements, rubric, due_date, allowed_extensions } = req.body;
   const courseId = req.params.courseId;
+  const descText = description || requirements || '';
 
-  if (!title || !description || !rubric || !due_date) {
-    return res.status(400).json({ error: 'All fields (title, description, rubric, due_date) are required.' });
+  if (!title || !descText || !rubric || !due_date) {
+    return res.status(400).json({ error: 'All fields (title, description/requirements, rubric, due_date) are required.' });
   }
 
   // 루브릭 검증 (JSON 구조여야 함)
@@ -619,7 +633,7 @@ app.post('/api/courses/:courseId/assignments', isAuthenticated, isProfessor, (re
 
   db.run(
     "INSERT INTO assignments (course_id, title, description, rubric, due_date, allowed_extensions) VALUES (?, ?, ?, ?, ?, ?)",
-    [courseId, title, description, rubric, due_date, allowed_extensions || ''],
+    [courseId, title, descText, rubric, due_date, allowed_extensions || ''],
     function (err) {
       if (err) {
         return res.status(500).json({ error: err.message });
@@ -853,8 +867,21 @@ app.post('/api/assignments/:assignmentId/submit', isAuthenticated, upload.single
 
 // ------------------------- 전용 평가 함수 모듈 (A안) -------------------------
 
-// LLM 응답 JSON 파싱 공통 헬퍼
-function parseLLMResponse(responseText) {
+// 루브릭 JSON에서 총 배점 만점을 구하는 공통 헬퍼 함수
+function getMaxRubricScore(rubricJson) {
+  if (!rubricJson) return 100;
+  try {
+    const parsed = typeof rubricJson === 'string' ? JSON.parse(rubricJson) : rubricJson;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const sum = parsed.reduce((total, item) => total + (parseInt(item.max_score) || 0), 0);
+      return sum > 0 ? sum : 100;
+    }
+  } catch (e) { }
+  return 100;
+}
+
+// LLM 응답 JSON 파싱 공통 헬퍼 (maxScore로 점수 상한 클램핑 적용)
+function parseLLMResponse(responseText, maxScore = 100) {
   if (!responseText) return null;
   const jsonMatch = responseText.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
@@ -863,8 +890,10 @@ function parseLLMResponse(responseText) {
       if (typeof parsed.score === 'number' && parsed.feedback) {
         const rawAiScore = typeof parsed.ai_involvement_score === 'number' ? parsed.ai_involvement_score : 0.0;
         const clampedAiScore = Math.max(0.0, Math.min(1.0, rawAiScore));
+        // maxScore를 초과하지 않도록 Clamp (0 ~ maxScore)
+        const clampedScore = Math.max(0, Math.min(maxScore, Math.round(parsed.score)));
         return {
-          score: parsed.score,
+          score: clampedScore,
           feedback: parsed.feedback,
           ai_involvement_score: Math.round(clampedAiScore * 100) / 100
         };
@@ -887,21 +916,20 @@ async function evaluateTextSubmission(assignment, filePath, fileName) {
     submissionContent = `[파일 내용 읽기 오류: ${e.message}]`;
   }
 
+  const maxScore = getMaxRubricScore(assignment.rubric);
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey && ChatOpenAI) {
     try {
       const model = new ChatOpenAI({
-        modelName: "gpt-5.6-luna",
+        modelName: "gpt-4o-mini",
         apiKey: apiKey,
-        temperature: 0.0,
+        temperature: 0.2,
       });
 
       const prompt = `
 당신은 컴퓨터공학과의 "${assignment.course_title}" 교과목 과제를 채점하고 피드백을 주는 전문 평가자입니다.
-학생이 제출한 과제 내용을 아래의 과제 설명과 평가 루브릭을 바탕으로 엄격하고 공정하게 평가해 주세요.
-
-[과제 제목]
-${assignment.title}
+학생이 제출한 과제 내용을 아래의 과제 설명과 평가 루브릭만을 바탕으로 평가해 주세요.
 
 [과제 설명]
 ${assignment.description}
@@ -909,22 +937,26 @@ ${assignment.description}
 [평가 루브릭 (JSON)]
 ${assignment.rubric}
 
+[과제 루브릭 총점 한도]
+총 만점: ${maxScore}점 (최종 총점 "score"는 절대로 ${maxScore}점을 초과해서는 안 되며, 0점에서 ${maxScore}점 사이로 산출해 주세요.)
+
 [학생이 제출한 과제 내용]
 ---
 ${submissionContent}
 ---
 
 [요구사항]
-1. 루브릭의 각 항목별로 점수 배점 기준에 따라 공정하게 점수를 매겨주세요.
-2. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여해 주세요. (루브릭 총점 한도 내)
-3. 학생에게 전달할 피드백(feedback)은 평가 루브릭에 기반하여 감점 요인에 대해서만 간략하게 한국어로 작성해 주세요.
+1. 평가 루브릭의 각 항목별로 점수를 매기고 감점의 경우 그 요인을 간략하게 제시해주세요.
+2. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여해 주세요. (루브릭 총 만점 ${maxScore}점 한도 내)
+3. 학생에게 전달할 피드백(feedback)은 평가 루브릭에서 제시한 요인만을 결합하여 제시해주세요.
 4. 제출물(코드 또는 콘텐츠) 중 ChatGPT 등의 AI 도구의 도움을 받아 생성되거나 수정되었을 것으로 추정되는 AI 관여 수준(ai_involvement_score)을 0.0에서 1.0 사이의 실수로 측정해 주세요. (0.0=전혀 없음, 1.0=100% AI 생성/수정 추정)
 5. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
 
 \`\`\`json
 {
-  "score": [계산된 총점 (정수)],
-  "feedback": "[루브릭 항목별 평가 내역과 종합 평가 피드백 (한국어)]",
+  "item_scores": [루브릭 항목별 점수, 감점, 감점 요인 3가지],
+  "score": [계산된 총점 (정수, 최대 ${maxScore}점)],
+  "feedback": "[루브릭 항목별 감점 요인 종합 제시 (한국어)]",
   "ai_involvement_score": [0.0에서 1.0 사이의 AI 관여도 추정 실수값]
 }
 \`\`\`
@@ -932,7 +964,8 @@ ${submissionContent}
 
       const response = await model.invoke(prompt);
       const responseText = response.content || response.text || '';
-      const result = parseLLMResponse(responseText);
+      // console.log("LLM evaluation = ", responseText);
+      const result = parseLLMResponse(responseText, maxScore);
       if (result) return result;
     } catch (llmErr) {
       console.error('LLM Text Evaluation Error:', llmErr.message);
@@ -943,25 +976,36 @@ ${submissionContent}
   return generateMockEvaluation(assignment.rubric, fileName);
 }
 
-// 2. PDF 과제 평가 함수 (PDF 전용)
+// 2. PDF 과제 평가 함수 (PDF 전용 - Vision 멀티모달 시각적 분석 지원)
+// 2. PDF 과제 평가 함수 (PDF 전용 - Vision 멀티모달 & 텍스트 파싱 하이브리드 분석 지원)
 async function evaluatePdfSubmission(assignment, filePath, fileName) {
+  const maxScore = getMaxRubricScore(assignment.rubric);
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey && ChatOpenAI) {
     try {
-      let pdfTextContent = `[PDF 파일 접수: ${fileName}]`;
-
       const model = new ChatOpenAI({
         modelName: "gpt-4o-mini",
         apiKey: apiKey,
         temperature: 0.2,
       });
 
-      const prompt = `
-당신은 컴퓨터공학과의 "${assignment.course_title}" 교과목 과제를 채점하고 피드백을 주는 전문 평가자입니다.
-학생이 제출한 PDF 과제 내용을 아래의 과제 설명과 평가 루브릭을 바탕으로 엄격하고 공정하게 평가해 주세요.
+      // PDF 텍스트 원문 파싱
+      let extractedPdfText = '';
+      if (pdfParse && fs.existsSync(filePath)) {
+        try {
+          const pdfBuffer = fs.readFileSync(filePath);
+          const parsed = await pdfParse(pdfBuffer);
+          extractedPdfText = parsed.text ? parsed.text.trim() : '';
+        } catch (parseErr) {
+          console.error('PDF text extraction error:', parseErr.message);
+        }
+      }
 
-[과제 제목]
-${assignment.title}
+      const promptText = `
+당신은 컴퓨터공학과의 "${assignment.course_title}" 교과목 과제를 채점하고 피드백을 주는 전문 평가자입니다.
+학생이 제출한 과제 내용을 아래의 과제 설명과 평가 루브릭만을 바탕으로 평가해 주세요.
+첨부된 데이터는 학생이 제출한 PDF 과제 파일("${fileName}")의 텍스트 내용 및 각 페이지를 고화질로 캡처한 이미지입니다.
 
 [과제 설명]
 ${assignment.description}
@@ -969,31 +1013,66 @@ ${assignment.description}
 [평가 루브릭 (JSON)]
 ${assignment.rubric}
 
-[학생이 제출한 PDF 과제 파일 정보]
----
-파일명: ${fileName}
-내용: ${pdfTextContent}
----
+[과제 루브릭 총점 한도]
+총 만점: ${maxScore}점 (최종 총점 "score"는 절대로 ${maxScore}점을 초과해서는 안 되며, 0점에서 ${maxScore}점 사이로 산출해 주세요.)
+
+${extractedPdfText ? `[PDF 추출 텍스트 원문]\n---\n${extractedPdfText.substring(0, 4000)}\n---` : ''}
 
 [요구사항]
-1. 루브릭의 각 항목별로 점수 배점 기준에 따라 공정하게 점수를 매겨주세요.
-2. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여해 주세요. (루브릭 총점 한도 내)
-3. 학생에게 전달할 피드백(feedback)은 평가 루브릭에 기반하여 감점 요인에 대해서만 간략하게 한국어로 작성해 주세요.
-4. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
-5. "ai_involvement_score"는 평가하지 않으므로 0으로 고정합니다.
+1. 첨부된 PDF 페이지 이미지 속 텍스트, 코드, 스크린샷, 다이어그램 등의 시각 요소와 추출 텍스트를 직접 확인하고 평가 루브릭의 각 항목별로 점수를 매기고 감점의 경우 그 요인을 간략하게 제시해주세요.
+2. 학생이 요구사항을 반영한 화면이나 결과물 이미지를 첨부했다면 이를 시각적으로 반영하여 정상 점수를 부여하세요
+3. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여해 주세요. (루브릭 총 만점 ${maxScore}점 한도 내)
+4. 학생에게 전달할 피드백(feedback)은 평가 루브릭에서 제시한 요인만을 결합하여 제시해주세요.
+5. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
+6. "ai_involvement_score"는 평가하지 않으므로 0으로 고정합니다.
+
 
 \`\`\`json
 {
-  "score": [계산된 총점 (정수)],
-  "feedback": "[루브릭 항목별 평가 내역과 종합 평가 피드백 (한국어)]",
+  "item_scores": [루브릭 항목별 점수, 감점, 감점 요인 3가지],
+  "score": [계산된 총점 (정수, 최대 ${maxScore}점)],
+  "feedback": "[루브릭 항목별 감점 요인 종합 제시 (한국어)]",
   "ai_involvement_score": 0.0
 }
 \`\`\`
       `;
 
-      const response = await model.invoke(prompt);
-      const responseText = response.content || response.text || '';
-      const result = parseLLMResponse(responseText);
+      let responseText = '';
+
+      if (pdfToPng && HumanMessage && fs.existsSync(filePath)) {
+        try {
+          // PDF 페이지를 PNG 이미지 Buffer로 변환 (가로 1200px, 최대 5페이지까지 분석)
+          const pngPages = await pdfToPng(filePath, { viewportScale: 1.5, pageNumbers: [1, 2, 3, 4, 5] });
+
+          const messageContent = [
+            { type: "text", text: promptText }
+          ];
+
+          pngPages.forEach((page) => {
+            if (page.content) {
+              const base64Img = page.content.toString('base64');
+              messageContent.push({
+                type: "image_url",
+                image_url: {
+                  url: `data:image/png;base64,${base64Img}`
+                }
+              });
+            }
+          });
+
+          const response = await model.invoke([new HumanMessage({ content: messageContent })]);
+          responseText = response.content || response.text || '';
+        } catch (convertErr) {
+          console.error('PDF to PNG conversion failed, falling back to text mode:', convertErr.message);
+          const response = await model.invoke(promptText + `\n\n[PDF 파일명: ${fileName}]`);
+          responseText = response.content || response.text || '';
+        }
+      } else {
+        const response = await model.invoke(promptText + `\n\n[PDF 파일명: ${fileName}]`);
+        responseText = response.content || response.text || '';
+      }
+
+      const result = parseLLMResponse(responseText, maxScore);
       if (result) return result;
     } catch (llmErr) {
       console.error('LLM PDF Evaluation Error:', llmErr.message);
@@ -1360,196 +1439,7 @@ app.get('/api/submissions/:submissionId/status', isAuthenticated, (req, res) => 
   });
 });
 
-// 학생의 과제 평가 이의 신청(재평가 요청) API
-app.post('/api/submissions/:submissionId/appeal', isAuthenticated, (req, res) => {
-  if (req.session.user.role !== 'student') {
-    return res.status(403).json({ error: 'Students only.' });
-  }
 
-  const submissionId = req.params.submissionId;
-  const studentId = req.session.user.username;
-  const { appealReason } = req.body;
-
-  if (!appealReason || !appealReason.trim()) {
-    return res.status(400).json({ error: '이의 신청 사유를 작성해 주세요.' });
-  }
-
-  const query = `
-    SELECT 
-      s.id as submission_id,
-      s.student_id,
-      s.assignment_id,
-      s.file_path,
-      s.file_name,
-      s.submit_count,
-      e.id as evaluation_id,
-      e.score,
-      e.feedback,
-      e.ai_involvement_score,
-      COALESCE(e.appeal_status, 'none') as appeal_status,
-      a.title as assignment_title,
-      a.description as assignment_description,
-      a.rubric as assignment_rubric,
-      c.title as course_title
-    FROM submissions s
-    JOIN assignments a ON s.assignment_id = a.id
-    JOIN courses c ON a.course_id = c.id
-    LEFT JOIN evaluations e ON s.id = e.submission_id
-    WHERE s.id = ?
-  `;
-
-  db.get(query, [submissionId], (err, row) => {
-    if (err || !row) {
-      return res.status(404).json({ error: 'Submission not found' });
-    }
-
-    if (row.student_id !== studentId) {
-      return res.status(403).json({ error: 'Access denied. You can only appeal your own submission.' });
-    }
-
-    // 2회 이상 사용한 경우 (2차 제출물이거나 이미 이의신청으로 2회 소진한 경우) 차단
-    if (row.submit_count >= 2) {
-      return res.status(400).json({
-        error: '최대 2회의 LLM 평가 기회를 모두 사용하여 더 이상 이의 신청할 수 없습니다.'
-      });
-    }
-
-    // 이미 이의 신청이 진행 중이거나 완료된 경우
-    if (row.appeal_status && row.appeal_status !== 'none') {
-      return res.status(400).json({
-        error: '이미 이의 신청이 제출되었거나 완료되었습니다.'
-      });
-    }
-
-    const nowStr = new Date().toISOString();
-
-    db.serialize(() => {
-      // 1. submit_count를 2로 갱신 (2회차 기회 차감) 및 status를 processing으로 변경
-      db.run("UPDATE submissions SET submit_count = 2, status = 'processing' WHERE id = ?", [submissionId]);
-      db.run(
-        "UPDATE evaluations SET appeal_reason = ?, appealed_at = ?, appeal_status = 'processing' WHERE submission_id = ?",
-        [appealReason.trim(), nowStr, submissionId],
-        (updErr) => {
-          if (updErr) {
-            return res.status(500).json({ error: 'Failed to record appeal: ' + updErr.message });
-          }
-
-          // 2. 즉시 성공 응답 반환 (0.1초 미만)
-          res.json({
-            message: 'Appeal received. Re-evaluation in progress.',
-            submissionId: submissionId,
-            status: 'processing'
-          });
-
-          // 3. 백그라운드 LLM 재평가 구동
-          runAsyncLLMAppealEvaluation(submissionId, row, appealReason.trim());
-        }
-      );
-    });
-  });
-});
-
-// 백그라운드 이의 신청 LLM 재평가 전용 헬퍼 함수
-async function runAsyncLLMAppealEvaluation(submissionId, subInfo, appealReason) {
-  try {
-    let submissionContent = '';
-    try {
-      if (subInfo.file_path && fs.existsSync(subInfo.file_path)) {
-        submissionContent = fs.readFileSync(subInfo.file_path, 'utf-8');
-      } else {
-        submissionContent = `[파일: ${subInfo.file_name}]`;
-      }
-    } catch (e) {
-      submissionContent = `[파일 읽기 오류: ${e.message}]`;
-    }
-
-    const apiKey = process.env.OPENAI_API_KEY;
-    let evalResult = null;
-
-    if (apiKey && ChatOpenAI) {
-      try {
-        const model = new ChatOpenAI({
-          modelName: "gpt-5.6-luna",
-          apiKey: apiKey,
-          temperature: 0.0,
-        });
-
-        const prompt = `
-당신은 컴퓨터공학과의 "${subInfo.course_title}" 교과목 과제를 채점하고 피드백을 검증하는 전문 수석 채점위원입니다.
-학생이 1차 평가 결과 피드백에 대해 다음과 같이 공식 이의 신청(재평가 요청)을 제기했습니다.
-
-[학생의 이의 신청 사유]
-"${appealReason}"
-
-[1차 평가 점수 및 피드백 내역]
-- 1차 평가 점수: ${subInfo.score}점
-- 1차 평가 피드백:
-${subInfo.feedback}
-
-[과제 제목]
-${subInfo.assignment_title}
-
-[과제 설명]
-${subInfo.assignment_description}
-
-[평가 루브릭 (JSON)]
-${subInfo.assignment_rubric}
-
-[학생이 제출한 과제 내용 (소스코드/텍스트)]
----
-${submissionContent}
----
-
-[재평가 지침 및 요구사항]
-1. 학생이 제출한 소스코드/과제 내용과 학생의 이의 신청 사유를 면밀하게 대조 검증해 주세요.
-2. 만약 1차 평가에서 LLM이 오판한 사실(예: 요구조건을 준수했음에도 잘못 감점한 경우 등)이 있다면, 이를 정정하여 점수를 다시 계산하고 변경된 점수를 부여해 주세요.
-3. 학생의 이의 제기가 타당하지 않다면, 이유를 논리적으로 설명하고 기존 점수를 유지해 주세요.
-4. 작성할 피드백(feedback)에는 [이의 신청 검토 결과] 항목을 첫 머리에 두고, 오판 정정 여부 및 최종 채점 사유를 간결하고 정중한 한국어로 작성해 주세요.
-5. 출력 결과는 반드시 다음과 같은 JSON 형식으로 제공되어야 합니다.
-
-\`\`\`json
-{
-  "score": [재산출된 최종 총점 (정수)],
-  "feedback": "[이의 신청 검토 결과 및 최종 피드백 (한국어)]",
-  "ai_involvement_score": 0.0
-}
-\`\`\`
-        `;
-
-        const response = await model.invoke(prompt);
-        const responseText = response.content || response.text || '';
-        evalResult = parseLLMResponse(responseText);
-      } catch (llmErr) {
-        console.error('LLM Appeal Evaluation Error:', llmErr.message);
-      }
-    }
-
-    if (!evalResult) {
-      evalResult = {
-        score: Math.min(100, (subInfo.score || 80) + 5),
-        feedback: `[이의 신청 검토 결과]\n학생께서 제기하신 이의 신청 사유("${appealReason}")를 검토하였습니다.\n제출하신 소스코드를 재확인한 결과, 해당 요구사항이 정상 반영되었음을 확인하여 점수를 정정 반영하였습니다.`,
-        ai_involvement_score: subInfo.ai_involvement_score || 0.0
-      };
-    }
-
-    db.run(
-      "UPDATE evaluations SET score = ?, feedback = ?, ai_involvement_score = ?, appeal_status = 'resolved' WHERE submission_id = ?",
-      [evalResult.score, evalResult.feedback, evalResult.ai_involvement_score, submissionId],
-      (updErr) => {
-        if (updErr) {
-          console.error(`Failed to update evaluation after appeal for submission ${submissionId}:`, updErr.message);
-          db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [submissionId]);
-        } else {
-          db.run("UPDATE submissions SET status = 'completed' WHERE id = ?", [submissionId]);
-        }
-      }
-    );
-
-  } catch (err) {
-    console.error(`Appeal evaluation handler error for submission ${submissionId}:`, err.message);
-    db.run("UPDATE submissions SET status = 'failed' WHERE id = ?", [submissionId]);
-  }
-}
 
 // 학생 본인의 특정 과제 제출 및 평가 결과 단건 조회 API
 app.get('/api/assignments/:assignmentId/my-submission', isAuthenticated, (req, res) => {

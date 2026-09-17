@@ -47,9 +47,11 @@
         <div class="course-info-banner">
           <div>
             <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
-              <h2 id="currentCourseTitle" style="font-size: 1.4rem; font-weight: 700; color: var(--text-main);">로딩 중...</h2>
+              <h2 id="currentCourseTitle" style="font-size: 1.4rem; font-weight: 700; color: var(--text-main);">로딩 중...
+              </h2>
             </div>
-            <p id="currentCourseDesc" style="color: var(--text-muted); font-size: 0.92rem; white-space: pre-wrap; margin: 0;"></p>
+            <p id="currentCourseDesc"
+              style="color: var(--text-muted); font-size: 0.92rem; white-space: pre-wrap; margin: 0;"></p>
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
             <button class="btn btn-secondary btn-sm" onclick="openEditCurrentCourseModal()">강좌 수정</button>
@@ -106,7 +108,8 @@
                 <span id="studentCountBadge" class="tag-badge tag-badge-gray">0</span>
               </div>
               <div style="display: flex; gap: 0.5rem; align-items: center;">
-                <button class="btn btn-secondary btn-sm" onclick="openStudentListModal()" style="font-size: 0.8rem; padding: 0.35rem 0.6rem;" title="학생 목록 및 비밀번호 확인">
+                <button class="btn btn-secondary btn-sm" onclick="openStudentListModal()"
+                  style="font-size: 0.8rem; padding: 0.35rem 0.6rem;" title="학생 목록 및 비밀번호 확인">
                   <span>👨‍🎓 학생 명단 & 비밀번호</span>
                 </button>
                 <div style="width: 160px;">
@@ -170,7 +173,8 @@
         </div>
         <div class="form-group">
           <label class="form-label" for="newCourseDesc">강좌 설명</label>
-          <textarea id="newCourseDesc" class="form-control" rows="4" placeholder="강좌의 개요 및 목표를 작성해 주세요." required></textarea>
+          <textarea id="newCourseDesc" class="form-control" rows="4" placeholder="강좌의 개요 및 목표를 작성해 주세요."
+            required></textarea>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
           <button type="button" class="btn btn-secondary" onclick="closeCreateModal()">취소</button>
@@ -218,7 +222,8 @@
         <!-- 과제 양식 파일(.md) 업로드 자동 입력 필드 -->
         <div class="form-group"
           style="background-color: var(--bg-light, #f8f9fa); padding: 1rem; border-radius: var(--radius-sm, 6px); border: 1px dashed var(--border-color, #cbd5e1); margin-bottom: 1.25rem;">
-          <label class="form-label" for="assMdFile" style="font-weight: 600; color: var(--primary);">📄 과제 양식 파일(.md) 업로드하여 자동 입력</label>
+          <label class="form-label" for="assMdFile" style="font-weight: 600; color: var(--primary);">📄 과제 양식 파일(.md)
+            업로드하여 자동 입력</label>
           <input type="file" id="assMdFile" class="form-control" accept=".md,.txt" onchange="handleMdFileUpload(event)">
           <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem; margin-bottom: 0;">
             마크다운 과제 파일 선택 시 제목, 설명, 마감일, 제출 파일 형식, 루브릭 항목이 자동으로 채워집니다.
@@ -230,8 +235,8 @@
           <input type="text" id="assTitle" class="form-control" placeholder="예: [과제1] 변수와 조건문 실습" required>
         </div>
         <div class="form-group">
-          <label class="form-label" for="assDesc">과제 설명</label>
-          <textarea id="assDesc" class="form-control" rows="4" placeholder="과제의 요구사항 및 안내를 입력해 주세요." required></textarea>
+          <label class="form-label" for="assDesc">요구 사항</label>
+          <textarea id="assDesc" class="form-control" rows="4" placeholder="과제의 요구사항을 입력해 주세요." required></textarea>
         </div>
         <div class="form-group">
           <label class="form-label" for="assDueDate">마감일</label>
@@ -276,7 +281,8 @@
         <!-- 동적으로 제출 상세 내용 채워짐 -->
       </div>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem;">
-        <button type="button" id="btnReEvalInDetailModal" class="btn btn-primary" onclick="reEvaluateCurrentDetailSub()">🔄 이 제출물 재평가</button>
+        <button type="button" id="btnReEvalInDetailModal" class="btn btn-primary"
+          onclick="reEvaluateCurrentDetailSub()">🔄 이 제출물 재평가</button>
         <button type="button" class="btn btn-secondary" onclick="closeEvalDetailModal()">닫기</button>
       </div>
     </div>
@@ -294,7 +300,8 @@
           수강하는 강좌를 체크하여 지정하세요. 선택한 강좌만 메인 화면에 표시되며 관련 과제에 참여할 수 있습니다.
         </p>
         <form id="courseSelectionForm">
-          <div id="courseCheckboxList" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding: 0.25rem;">
+          <div id="courseCheckboxList"
+            style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding: 0.25rem;">
             <!-- 전체 강좌 체크박스 목록이 동적으로 채워짐 -->
           </div>
           <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
@@ -314,7 +321,8 @@
         <button class="close-btn" onclick="closeStudentListModal()">&times;</button>
       </div>
       <div style="padding-top: 0.5rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div
+          style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
           <div style="font-size: 0.9rem; color: var(--text-muted);">
             총 <strong id="modalStudentCount" style="color: var(--primary);">0</strong>명의 학생이 등록되어 있습니다.
           </div>
@@ -482,8 +490,8 @@
         document.getElementById('statTotalSubmissions').textContent = `${stats.totalSubmissions}건`;
 
         const maxPossibleSubmissions = stats.totalStudents * stats.totalAssignments;
-        const rate = maxPossibleSubmissions > 0 
-          ? Math.round((stats.totalSubmissions / maxPossibleSubmissions) * 100) 
+        const rate = maxPossibleSubmissions > 0
+          ? Math.round((stats.totalSubmissions / maxPossibleSubmissions) * 100)
           : 0;
         document.getElementById('statSubmissionRate').textContent = `${rate}%`;
 
@@ -527,7 +535,7 @@
 
         const subCount = ass.submissionCount || 0;
         const isAllSubmitted = totalStudents > 0 && subCount >= totalStudents;
-        const submissionBadge = isAllSubmitted 
+        const submissionBadge = isAllSubmitted
           ? `<span class="tag-badge tag-badge-success">제출 완료 (${subCount}/${totalStudents}명)</span>`
           : `<span class="tag-badge ${subCount > 0 ? 'tag-badge-primary' : 'tag-badge-gray'}">제출 ${subCount}/${totalStudents}명</span>`;
 
@@ -542,7 +550,7 @@
             ${escapeHtml(ass.description)}
           </p>
           <div style="font-size: 0.8rem; color: var(--text-light); display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem;">
-            <span>⏱ <strong>마감:</strong> ${new Date(ass.due_date).toLocaleDateString()} ${new Date(ass.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            <span>⏱ <strong>마감:</strong> ${new Date(ass.due_date).toLocaleDateString()} ${new Date(ass.due_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             <span>🎯 <strong>루브릭 총점:</strong> ${rubricTotal}점</span>
             <span>📁 <strong>형식:</strong> ${escapeHtml(ass.allowed_extensions || '모두 허용')}</span>
             ${ass.averageScore !== null ? `<span>⭐ <strong>평균:</strong> ${ass.averageScore}점</span>` : ''}
@@ -710,7 +718,7 @@
         tr.dataset.password = (student.password || '').toLowerCase();
 
         const rateBadge = totalAssignments > 0
-          ? `<span class="tag-badge ${student.submitted_count === totalAssignments ? 'tag-badge-success' : (student.submitted_count > 0 ? 'tag-badge-primary' : 'tag-badge-gray')}">${student.submitted_count}/${totalAssignments} (${Math.round((student.submitted_count/totalAssignments)*100)}%)</span>`
+          ? `<span class="tag-badge ${student.submitted_count === totalAssignments ? 'tag-badge-success' : (student.submitted_count > 0 ? 'tag-badge-primary' : 'tag-badge-gray')}">${student.submitted_count}/${totalAssignments} (${Math.round((student.submitted_count / totalAssignments) * 100)}%)</span>`
           : '<span class="tag-badge tag-badge-gray">0/0</span>';
 
         const scoreDisplay = student.average_score !== null && student.average_score !== undefined
@@ -1024,14 +1032,44 @@
       document.getElementById('rubricTotalScore').textContent = total;
     }
 
+    // 마크다운 파일 5개 필수 헤더 검증 함수
+    function validateMdTemplate(text) {
+      const requiredHeaders = [
+        { key: 'title', label: '## 제목', regex: /##[ \t]*제목/i },
+        { key: 'requirements', label: '#### 요구 사항', regex: /####[ \t]*(?:요구\s*사항|요구사항)/i },
+        { key: 'dueDate', label: '#### 마감일', regex: /####[ \t]*마감일/i },
+        { key: 'allowedExt', label: '#### 제출 허용 파일 형식', regex: /####[ \t]*제출[ \t]*허용[ \t]*파일[ \t]*형식/i },
+        { key: 'rubric', label: '#### 평가 기준', regex: /####[ \t]*평가[ \t]*기준/i }
+      ];
+
+      const missing = [];
+      requiredHeaders.forEach(item => {
+        if (!item.regex.test(text)) {
+          missing.push(item.label);
+        }
+      });
+
+      return missing;
+    }
+
     // 마크다운 파일 자동 파싱
     function handleMdFileUpload(event) {
-      const file = event.target.files[0];
+      const fileInput = event.target;
+      const file = fileInput.files[0];
       if (!file) return;
 
       const reader = new FileReader();
       reader.onload = function (e) {
-        const text = e.target.result;
+        let text = e.target.result || '';
+        text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+
+        const missingHeaders = validateMdTemplate(text);
+        if (missingHeaders.length > 0) {
+          alert(`[마크다운 양식 오류]\n\n업로드하신 파일에 아래 필수 헤더가 누락되었습니다:\n- ${missingHeaders.join('\n- ')}\n\n지정된 5개 필수 헤더 양식을 확인 후 다시 업로드해 주세요.`);
+          fileInput.value = '';
+          return;
+        }
+
         parseAndFillAssignmentMd(text);
       };
       reader.readAsText(file);
@@ -1040,26 +1078,20 @@
     function parseAndFillAssignmentMd(text) {
       if (!text) return;
 
-      const titleMatch = text.match(/##\s*제목\s*\n+([\s\S]*?)(?=\n+#{1,4}\s+|$)/i);
+      // 1. ## 제목 파싱
+      const titleMatch = text.match(/##[ \t]*제목[ \t]*\n+([^\n]+)/i);
       if (titleMatch && titleMatch[1]) {
         document.getElementById('assTitle').value = titleMatch[1].trim();
       }
 
-      let descriptionText = '';
-      const descMatch = text.match(/####\s*과제\s*설명\s*\n+([\s\S]*?)(?=\n+####\s*마감일|$)/i);
-      if (descMatch && descMatch[1]) {
-        descriptionText = descMatch[1].trim();
-      } else {
-        const fallbackDesc = text.match(/##\s*제목\s*\n+.*?\n+([\s\S]*?)(?=\n+####\s*마감일|$)/i);
-        if (fallbackDesc && fallbackDesc[1]) {
-          descriptionText = fallbackDesc[1].trim();
-        }
-      }
-      if (descriptionText) {
-        document.getElementById('assDesc').value = descriptionText;
+      // 2. #### 요구 사항 파싱
+      const reqMatch = text.match(/####[ \t]*(?:요구\s*사항|요구사항)[ \t]*\n+([\s\S]*?)(?=\n[ \t]*####|$)/i);
+      if (reqMatch && reqMatch[1]) {
+        document.getElementById('assDesc').value = reqMatch[1].trim();
       }
 
-      const dateMatch = text.match(/####\s*마감일\s*[:\s]*([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}(?:\s+[0-9]{1,2}:[0-9]{1,2})?)/i);
+      // 3. #### 마감일 파싱
+      const dateMatch = text.match(/####[ \t]*마감일[ \t]*[:\s]*([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}(?:\s+[0-9]{1,2}:[0-9]{1,2})?)/i);
       if (dateMatch && dateMatch[1]) {
         const parts = dateMatch[1].trim().replace(/\//g, '-').split(/\s+/);
         const dateParts = parts[0].split('-');
@@ -1074,12 +1106,14 @@
         document.getElementById('assDueDate').value = `${yyyy}-${mm}-${dd}T${timeStr}`;
       }
 
-      const extMatch = text.match(/####\s*제출\s*허용\s*파일\s*형식\s*\n+([\s\S]*?)(?=\n+####\s*|$)/i);
+      // 4. #### 제출 허용 파일 형식 파싱
+      const extMatch = text.match(/####[ \t]*제출[ \t]*허용[ \t]*파일[ \t]*형식[ \t]*\n+([^\n]+)/i);
       if (extMatch && extMatch[1]) {
-        document.getElementById('assAllowedExt').value = extMatch[1].trim().split('\n')[0].trim();
+        document.getElementById('assAllowedExt').value = extMatch[1].trim();
       }
 
-      const rubricMatch = text.match(/####\s*평가\s*기준\s*\n+([\s\S]*?)(?=\n+#{1,4}\s+|$)/i);
+      // 5. #### 평가 기준 파싱 (루브릭 테이블)
+      const rubricMatch = text.match(/####[ \t]*평가[ \t]*기준[ \t]*\n+([\s\S]*?)(?=\n#{1,4}[ \t]+|$)/i);
       const rubricSection = rubricMatch ? rubricMatch[1] : text;
       const lines = rubricSection.split('\n');
       const parsedRubric = [];
