@@ -178,19 +178,23 @@
           const submitGuide = document.getElementById('submitGuideText');
           const btnGoToLecture = document.getElementById('btnGoToLecture');
 
-          resubmitSection.style.display = 'block';
-          btnGoToLecture.href = `lecture.html?id=${data.course_id}`;
+          if (resubmitSection) resubmitSection.style.display = 'block';
+          if (btnGoToLecture) btnGoToLecture.href = `lecture.html?id=${data.course_id}`;
 
           if (data.submit_count >= 2) {
-            submitBadge.textContent = '최종 제출 완료 (2/2회)';
-            submitBadge.className = 'tag-badge tag-badge-success';
-            submitGuide.textContent = '최대 제출 횟수(2회)를 모두 완료했습니다. 더 이상 제출할 수 없습니다.';
-            btnGoToLecture.style.display = 'none';
+            if (submitBadge) {
+              submitBadge.textContent = '최종 제출 완료 (2/2회)';
+              submitBadge.className = 'tag-badge tag-badge-success';
+            }
+            if (submitGuide) submitGuide.textContent = '최대 제출 횟수(2회)를 모두 완료했습니다. 더 이상 제출할 수 없습니다.';
+            if (btnGoToLecture) btnGoToLecture.style.display = 'none';
           } else {
-            submitBadge.textContent = '1차 제출 완료 (1/2회)';
-            submitBadge.className = 'tag-badge tag-badge-primary';
-            submitGuide.textContent = '피드백 내용을 바탕으로 과제 내용을 수정한 후 2차 재제출(마지막)을 진행하세요.';
-            btnGoToLecture.style.display = 'inline-block';
+            if (submitBadge) {
+              submitBadge.textContent = '1차 제출 완료 (1/2회)';
+              submitBadge.className = 'tag-badge tag-badge-primary';
+            }
+            if (submitGuide) submitGuide.textContent = '피드백 내용을 바탕으로 과제 내용을 수정한 후 2차 재제출(마지막)을 진행하세요.';
+            if (btnGoToLecture) btnGoToLecture.style.display = 'inline-block';
           }
         }
       } catch (err) {
