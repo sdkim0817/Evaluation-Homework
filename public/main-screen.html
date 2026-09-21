@@ -651,7 +651,7 @@
 
     // 등록 학생 상세 명단 모달 열기 및 데이터 로드 (교수용, 비밀번호 포함)
     async function openStudentListModal() {
-      const courseId = currentProfCourseId || (currentCourses && currentCourses.length > 0 ? currentCourses[0].id : null);
+      const courseId = selectedCourseId || (allCourses && allCourses.length > 0 ? allCourses[0].id : null);
       if (!courseId) {
         alert('선택된 강좌가 없습니다.');
         return;

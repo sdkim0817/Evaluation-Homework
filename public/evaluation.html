@@ -183,7 +183,7 @@
       }
     }
 
-    let isPollingReEval = false;
+    let currentSubmissionsMap = {};
 
     // 제출 현황 로드
     async function loadSubmissions() {
@@ -197,6 +197,8 @@
         if (!response.ok) throw new Error('Failed to load submissions');
         const submissions = await response.json();
 
+        currentSubmissionsMap = {};
+
         if (submissions.length === 0) {
           tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-light); padding: 2rem 0;">제출된 과제가 없습니다.</td></tr>';
           return;
@@ -209,6 +211,7 @@
         let hasProcessing = false;
 
         submissions.forEach(sub => {
+          currentSubmissionsMap[sub.submission_id] = sub;
           const tr = document.createElement('tr');
 
           let scoreText = '평가 대기';
@@ -230,7 +233,7 @@
             }
 
             feedbackBtn = `
-              <button class="btn btn-secondary btn-sm" onclick="openFeedbackModal('${escapeHtml(sub.student_name)}', ${sub.score}, ${sub.ai_involvement_score ?? 0}, '${escapeHtmlForJS(sub.feedback)}')">
+              <button class="btn btn-secondary btn-sm" onclick="openFeedbackModalBySubmissionId(${sub.submission_id})">
                 피드백 보기
               </button>
             `;
@@ -370,7 +373,15 @@
       }
     }
 
+    let isPollingReEval = false;
+
     // 피드백 모달 제어
+    function openFeedbackModalBySubmissionId(submissionId) {
+      const sub = currentSubmissionsMap[submissionId];
+      if (!sub) return;
+      openFeedbackModal(sub.student_name, sub.score, sub.ai_involvement_score, sub.feedback);
+    }
+
     function openFeedbackModal(studentName, score, aiScore, feedback) {
       document.getElementById('feedbackModalTitle').textContent = `${studentName} 학생의 평가 결과`;
       document.getElementById('feedbackModalScore').textContent = `${score} 점`;
