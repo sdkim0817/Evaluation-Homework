@@ -7,3 +7,4 @@ uploads/
 test_*.js
 *.pem
 *.md
+*.pdf
