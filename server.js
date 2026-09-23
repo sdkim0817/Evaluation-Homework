@@ -16,10 +16,9 @@ try {
   console.warn('Warning: @langchain/openai module not loaded. Mock LLM will be used.');
 }
 
-let PDFParseClass, pdfToPng;
+let pdfParse, pdfToPng;
 try {
-  const pdfParseModule = require('pdf-parse');
-  PDFParseClass = pdfParseModule.PDFParse || pdfParseModule;
+  pdfParse = require('pdf-parse');
 } catch (e) {
   console.warn('Warning: pdf-parse module not loaded.');
 }
@@ -947,21 +946,18 @@ ${submissionContent}
 ---
 
 [요구사항]
-1. 평가 루브릭의 각 항목별로 점수를 매깁니다.
-2. 만점을 받은 항목이나 요구사항을 정상적으로 충족한 항목은 절대로 언급하지 않습니다.
-3. 감점된 항목에 대해서만 무엇이 부족했는지 구체적으로 간략하게 설명합니다.
-4. 단순한 개선 제안이나 칭찬을 추가하지 않습니다.
-5. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여합니다. (루브릭 총 만점 ${maxScore}점 한도 내)
-6. 학생에게 전달할 피드백(feedback)은 평가 루브릭에서 제시한 요인만을 결합하여 제시합니다. 만점을 받은 항목이나 요구사항을 정상적으로 충족한 항목은 절대로 언급하지 않습니다.
-7. 제출물(코드 또는 콘텐츠) 중 ChatGPT 등의 AI 도구의 도움을 받아 생성되거나 수정되었을 것으로 추정되는 AI 관여 수준(ai_involvement_score)을 0.0에서 1.0 사이의 실수로 측정해 주세요. (0.0=전혀 없음, 1.0=100% AI 생성/수정 추정)
-8. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
+1. 평가 루브릭의 각 항목별로 점수를 매기고 감점의 경우 그 요인을 간략하게 제시해주세요.
+2. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여해 주세요. (루브릭 총 만점 ${maxScore}점 한도 내)
+3. 학생에게 전달할 피드백(feedback)은 평가 루브릭에서 제시한 요인만을 결합하여 제시해주세요.
+4. 제출물(코드 또는 콘텐츠) 중 ChatGPT 등의 AI 도구의 도움을 받아 생성되거나 수정되었을 것으로 추정되는 AI 관여 수준(ai_involvement_score)을 0.0에서 1.0 사이의 실수로 측정해 주세요. (0.0=전혀 없음, 1.0=100% AI 생성/수정 추정)
+5. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
 
 \`\`\`json
 {
+  "item_scores": [루브릭 항목별 점수, 감점, 감점 요인 3가지],
   "score": [계산된 총점 (정수, 최대 ${maxScore}점)],
-  "feedback": "[만점을 받은 항목이나 요구사항을 정상적으로 충족한 항목은 절대로 언급하지 마세요. (한국어)]",
-  "ai_involvement_score": [0.0에서 1.0 사이의 AI 관여도 추정 실수값],
-  "evidences: [ { "rubic_item": "항목명", "score": "점수", "evidence": "근거" }],
+  "feedback": "[루브릭 항목별 감점 요인 종합 제시 (한국어)]",
+  "ai_involvement_score": [0.0에서 1.0 사이의 AI 관여도 추정 실수값]
 }
 \`\`\`
       `;
@@ -994,19 +990,13 @@ async function evaluatePdfSubmission(assignment, filePath, fileName) {
         temperature: 0.2,
       });
 
-      // PDF 텍스트 원문 파싱 (pdf-parse v2 호환)
+      // PDF 텍스트 원문 파싱
       let extractedPdfText = '';
-      if (PDFParseClass && fs.existsSync(filePath)) {
+      if (pdfParse && fs.existsSync(filePath)) {
         try {
           const pdfBuffer = fs.readFileSync(filePath);
-          if (typeof PDFParseClass === 'function' && PDFParseClass.name === 'PDFParse') {
-            const parser = new PDFParseClass({ data: pdfBuffer });
-            const parsed = await parser.getText();
-            extractedPdfText = parsed && parsed.text ? parsed.text.trim() : '';
-          } else if (typeof PDFParseClass === 'function') {
-            const parsed = await PDFParseClass(pdfBuffer);
-            extractedPdfText = parsed && parsed.text ? parsed.text.trim() : '';
-          }
+          const parsed = await pdfParse(pdfBuffer);
+          extractedPdfText = parsed.text ? parsed.text.trim() : '';
         } catch (parseErr) {
           console.error('PDF text extraction error:', parseErr.message);
         }
@@ -1029,22 +1019,20 @@ ${assignment.rubric}
 ${extractedPdfText ? `[PDF 추출 텍스트 원문]\n---\n${extractedPdfText.substring(0, 4000)}\n---` : ''}
 
 [요구사항]
-1. 첨부된 PDF 페이지 이미지 속 텍스트, 다이어그램 등의 시각 요소와 추출 텍스트를 직접 확인하고 평가 루브릭의 각 항목별로 점수를 매깁니다.
-2. 만점을 받은 항목이나 요구사항을 정상적으로 충족한 항목은 절대로 언급하지 않습니다.
-3. 감점된 항목에 대해서만 무엇이 부족했는지 구체적으로 간략하게 설명합니다.
-4. 단순한 개선 제안이나 칭찬을 절대 추가하지 않습니다.
-5. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여합니다. (루브릭 총 만점 ${maxScore}점 한도 내)
-6. 학생에게 전달할 피드백(feedback)은 평가 루브릭에서 제시한 요인만을 결합하여 제시합니다. 만점을 받은 항목이나 요구사항을 정상적으로 충족한 항목은 절대로 언급하지 않습니다.
-7. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
-8. "ai_involvement_score"는 평가하지 않으므로 0으로 고정합니다.
+1. 첨부된 PDF 페이지 이미지 속 텍스트, 코드, 스크린샷, 다이어그램 등의 시각 요소와 추출 텍스트를 직접 확인하고 평가 루브릭의 각 항목별로 점수를 매기고 감점의 경우 그 요인을 간략하게 제시해주세요.
+2. 학생이 요구사항을 반영한 화면이나 결과물 이미지를 첨부했다면 이를 시각적으로 반영하여 정상 점수를 부여하세요
+3. 모든 항목 점수의 합계를 계산해 최종 총점(score)을 부여해 주세요. (루브릭 총 만점 ${maxScore}점 한도 내)
+4. 학생에게 전달할 피드백(feedback)은 평가 루브릭에서 제시한 요인만을 결합하여 제시해주세요.
+5. 출력 결과는 반드시 다음과 같은 JSON 형식의 텍스트로만 제공되어야 합니다. 다른 말은 덧붙이지 마십시오.
+6. "ai_involvement_score"는 평가하지 않으므로 0으로 고정합니다.
 
 
 \`\`\`json
 {
+  "item_scores": [루브릭 항목별 점수, 감점, 감점 요인 3가지],
   "score": [계산된 총점 (정수, 최대 ${maxScore}점)],
-  "feedback": "[만점을 받은 항목이나 요구사항을 정상적으로 충족한 항목은 절대로 언급하지 않습니다. (한국어)]",
-  "ai_involvement_score": 0.0,
-  "evidences: [ { "rubic_item": "항목명", "score": "점수", "evidence": "근거" }],
+  "feedback": "[루브릭 항목별 감점 요인 종합 제시 (한국어)]",
+  "ai_involvement_score": 0.0
 }
 \`\`\`
       `;
@@ -1053,9 +1041,8 @@ ${extractedPdfText ? `[PDF 추출 텍스트 원문]\n---\n${extractedPdfText.sub
 
       if (pdfToPng && HumanMessage && fs.existsSync(filePath)) {
         try {
-          // 절대 경로(path.resolve)로 전달하여 pdf-to-png-converter 경로/타입 오류 방지
-          const absPath = path.resolve(filePath);
-          const pngPages = await pdfToPng(absPath, { viewportScale: 1.5, pageNumbers: [1, 2, 3, 4, 5] });
+          // PDF 페이지를 PNG 이미지 Buffer로 변환 (가로 1200px, 최대 5페이지까지 분석)
+          const pngPages = await pdfToPng(filePath, { viewportScale: 1.5, pageNumbers: [1, 2, 3, 4, 5] });
 
           const messageContent = [
             { type: "text", text: promptText }
