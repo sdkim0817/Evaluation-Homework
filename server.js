@@ -783,12 +783,12 @@ app.post('/api/assignments/:assignmentId/submit', isAuthenticated, upload.single
         }
       }
 
-      // 2. 업로드된 파일 내용 읽기 (텍스트 파일인지 확인하고 한계 용량 1MB 정도로 제어)
+      // 2. 업로드된 파일 내용 읽기 (텍스트 파일인지 확인하고 한계 용량 5MB 정도로 제어)
       let submissionContent = '';
       try {
         const stats = fs.statSync(filePath);
-        if (stats.size > 1024 * 1024) {
-          return res.status(400).json({ error: 'File size too large. Under 1MB only.' });
+        if (stats.size > 5000000) {
+          return res.status(400).json({ error: 'File size too large. Under 5MB only.' });
         }
         // 간단히 utf-8로 읽음. 텍스트가 아닌 경우에도 바이너리를 읽어 깨진 텍스트라도 LLM에 들어가거나 예외처리 유도.
         submissionContent = fs.readFileSync(filePath, 'utf-8');
@@ -908,8 +908,8 @@ async function evaluateTextSubmission(assignment, filePath, fileName) {
   let submissionContent = '';
   try {
     const stats = fs.statSync(filePath);
-    if (stats.size > 1024 * 1024) {
-      throw new Error('File size exceeds 1MB limit.');
+    if (stats.size > 5000000) {
+      throw new Error('File size exceeds 5MB limit.');
     }
     submissionContent = fs.readFileSync(filePath, 'utf-8');
   } catch (e) {
@@ -922,7 +922,7 @@ async function evaluateTextSubmission(assignment, filePath, fileName) {
   if (apiKey && ChatOpenAI) {
     try {
       const model = new ChatOpenAI({
-        modelName: "gpt-4o-mini",
+        modelName: "gpt-6-luna",
         apiKey: apiKey,
         temperature: 0.2,
       });
@@ -1013,7 +1013,7 @@ async function evaluatePdfSubmission(assignment, filePath, fileName) {
   if (apiKey && ChatOpenAI) {
     try {
       const model = new ChatOpenAI({
-        modelName: "gpt-4o-mini",
+        modelName: "gpt-6-luna",
         apiKey: apiKey,
         temperature: 0.2,
       });
