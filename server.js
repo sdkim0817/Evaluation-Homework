@@ -924,7 +924,7 @@ async function evaluateTextSubmission(assignment, filePath, fileName) {
       const model = new ChatOpenAI({
         modelName: "gpt-6-luna",
         apiKey: apiKey,
-        temperature: 0.2,
+        temperature: 1,
       });
 
       const prompt = `
@@ -1015,7 +1015,7 @@ async function evaluatePdfSubmission(assignment, filePath, fileName) {
       const model = new ChatOpenAI({
         modelName: "gpt-6-luna",
         apiKey: apiKey,
-        temperature: 0.2,
+        temperature: 1,
       });
 
       // PDF 텍스트 원문 파싱 (pdf2json 사용으로 전역 pdfjsLib 충돌 원천 차단)
